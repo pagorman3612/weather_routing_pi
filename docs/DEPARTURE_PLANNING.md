@@ -125,6 +125,8 @@ WindTrack records **IMU `.motion`** time series and optional **JSON log events**
 | **WRPI** | If enabled and profile present, map each candidate route’s along-track conditions (from GRIB + route geometry + polar context) to inputs the profile expects, compute an extra **discomfort penalty or likelihood**, and fold it into Custom ranking. |
 | **Detection** | Optional WindTrack presence via plugin API / message convention / documented install path — exact mechanism TBD; profile file path may be enough for v1 (user points WRPI at an exported file). |
 
+When the user plans a departure using WRPI, the GRIB dataset used for the sweep is the same dataset WindTrack should sample during the passage if the user sails with that GRIB still loaded.
+
 ### 7.3 Comfort profile export — requirements for WindTrack (draft)
 
 Use this as the checklist when writing the WindTrack-side spec; the **canonical schema** may later live in the WindTrack repo or a shared snippet once frozen.
