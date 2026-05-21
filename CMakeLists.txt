@@ -184,6 +184,9 @@ SET(SRCS
             src/weather_routing_pi.cpp
             src/WeatherRouting.cpp
             src/SunCalculator.cpp
+            # WR.1 + WR.2: Departure Sweep Engine
+            src/SolarCalculator.cpp
+            src/DepartureSweepController.cpp
             src/ConfigurationDialog.cpp
             src/SettingsDialog.cpp
             src/PlotDialog.cpp
