@@ -40,6 +40,7 @@ set(SRC
     PolygonRegion_tests.cpp
     Position_tests.cpp
     RoutePoint_tests
+    test_departure_sweep.cpp
     Utilities_tests.cpp
 
     #Mock source files, in alphabetical order
@@ -74,6 +75,8 @@ set(SRC
     ${CMAKE_SOURCE_DIR}/src/RouteSimplifier.cpp
     ${CMAKE_SOURCE_DIR}/src/SettingsDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/StatisticsDialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/DepartureSweepController.cpp
+    ${CMAKE_SOURCE_DIR}/src/SolarCalculator.cpp
     ${CMAKE_SOURCE_DIR}/src/SunCalculator.cpp
     ${CMAKE_SOURCE_DIR}/src/Utilities.cpp
     ${CMAKE_SOURCE_DIR}/src/WeatherDataProvider.cpp
@@ -156,5 +159,59 @@ add_custom_target(coverage
 
 # Add a custom command to the coverage target that runs gcov, only for src files
 add_custom_command(TARGET coverage
-    COMMAND gcov -n -s ${CMAKE_SOURCE_DIR}/src -r ${UNIT_UNDER_TEST_OBJECT_DIR}/*.o 
+    COMMAND gcov -n -s ${CMAKE_SOURCE_DIR}/src -r ${UNIT_UNDER_TEST_OBJECT_DIR}/*.o
 )
+
+# ---------------------------------------------------------------------------
+# departure_sweep_tests — WR.1 + WR.2 standalone test target (no GL dependency)
+# Only compiles the engine code itself; no WRPI routing source files needed
+# because the tests only construct PlotData structs (POD, inline ctors).
+# ---------------------------------------------------------------------------
+set(DSW_SRC
+    test_departure_sweep.cpp
+    mock_plugin_impl.c
+    ${CMAKE_SOURCE_DIR}/src/DepartureSweepController.cpp
+    ${CMAKE_SOURCE_DIR}/src/SolarCalculator.cpp
+)
+add_executable(departure_sweep_tests ${DSW_SRC})
+
+target_compile_definitions(departure_sweep_tests
+    PUBLIC
+        USE_MOCK_DEFS CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR}"
+        TESTDATADIR="${CMAKE_CURRENT_LIST_DIR}/testdata"
+        UNIT_TESTS
+        GTEST_LINKED_AS_SHARED_LIBRARY=1
+)
+
+target_include_directories(departure_sweep_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/${PKG_API_LIB}/include
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/libtess2/include
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/tinyxml/include
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/plugin_dc/dc_utils/include
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/jsonlib/include
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/odapi
+        ${CMAKE_SOURCE_DIR}/opencpn-libs/pugixml
+        ${GTEST_INCLUDE_DIRS}
+        ${GMOCK_INCLUDE_DIRS}
+        ${wxWidgets_INCLUDE_DIRS}
+)
+
+target_link_libraries(departure_sweep_tests
+    PRIVATE
+        GTest::gmock_main
+        ${wxWidgets_LIBRARIES}
+        ocpn::api
+        ocpn::libtess2
+        ocpn::pugixml
+        ocpn::tinyxml
+        ocpn::dc-utils
+        ocpn::jsonlib
+        ocpn::bzip2
+        ${ZLIB_LIBRARIES}
+)
+
+add_test(NAME departure_sweep_tests COMMAND departure_sweep_tests)
+gtest_discover_tests(departure_sweep_tests)
