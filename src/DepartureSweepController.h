@@ -144,8 +144,10 @@ public:
 
     // Call from UI timer (~250 ms). Checks running overlays, handles GRIB
     // requests, collects results, dispatches pending work.
+    // grib_slot: pointer to WeatherRouting::m_RouteMapOverlayNeedingGrib —
+    //   must be non-null so the plugin GRIB response is routed to the right overlay.
     // Returns number of newly-completed candidates (0 when idle).
-    int Poll();
+    int Poll(RouteMapOverlay** grib_slot = nullptr);
 
     const std::vector<SweepCandidate>& GetCandidates() const { return m_candidates; }
 

@@ -20,6 +20,8 @@
 // Step-size table (seconds)
 // ---------------------------------------------------------------------------
 
+static const wxString kDash(wchar_t(0x2014)); // em-dash, avoids UTF-8/ANSI mojibake
+
 static const int kStepSecs[] = { 3600, 7200, 10800, 21600, 43200, 86400, 0 };
 static const wxString kStepLabels[] = {
     "1 h", "2 h", "3 h (default)", "6 h", "12 h", "24 h", "GRIB spacing (auto)"
@@ -361,7 +363,7 @@ void DeparturePlanningDialog::OnRun(wxCommandEvent&) {
 // ---------------------------------------------------------------------------
 
 void DeparturePlanningDialog::OnPollTimer(wxTimerEvent&) {
-    int newDone = m_controller.Poll();
+    int newDone = m_controller.Poll(&m_wr.m_RouteMapOverlayNeedingGrib);
     if (newDone > 0)
         UpdateResultsList();
 
@@ -381,7 +383,8 @@ void DeparturePlanningDialog::OnPollTimer(wxTimerEvent&) {
             SetStatusText(wxString::Format(
                 _("Cancelled — %d of %d candidates complete."), done, total));
         else
-            SetStatusText(wxString::Format(_("Sweep complete — %d candidates."), total));
+            SetStatusText(wxString::Format("Sweep complete %s %d candidates.",
+                kDash, total));
     }
 }
 
@@ -579,7 +582,7 @@ void DeparturePlanningDialog::UpdateResultsList() {
         if (c.rank > 0)
             m_lcResults->SetItem(row, COL_RANK, wxString::Format("%d", c.rank));
         else
-            m_lcResults->SetItem(row, COL_RANK, "—");
+            m_lcResults->SetItem(row, COL_RANK, kDash);
 
         // Departure
         m_lcResults->SetItem(row, COL_DEP,
@@ -621,14 +624,14 @@ void DeparturePlanningDialog::UpdateResultsList() {
                 m_lcResults->SetItem(li);
             }
         } else {
-            m_lcResults->SetItem(row, COL_ETA,    "—");
-            m_lcResults->SetItem(row, COL_DUR,    "—");
-            m_lcResults->SetItem(row, COL_AVGTWS, "—");
-            m_lcResults->SetItem(row, COL_MAXTWS, "—");
-            m_lcResults->SetItem(row, COL_SWELL,  "—");
-            m_lcResults->SetItem(row, COL_COMFORT,"—");
+            m_lcResults->SetItem(row, COL_ETA,    kDash);
+            m_lcResults->SetItem(row, COL_DUR,    kDash);
+            m_lcResults->SetItem(row, COL_AVGTWS, kDash);
+            m_lcResults->SetItem(row, COL_MAXTWS, kDash);
+            m_lcResults->SetItem(row, COL_SWELL,  kDash);
+            m_lcResults->SetItem(row, COL_COMFORT,kDash);
             if (filterEnabled)
-                m_lcResults->SetItem(row, COL_ARRIVAL, "—");
+                m_lcResults->SetItem(row, COL_ARRIVAL, kDash);
             m_lcResults->SetItem(row, COL_STATUS,
                 c.failure_reason.IsEmpty() ? wxString("Failed") : c.failure_reason);
 
@@ -769,7 +772,7 @@ void DeparturePlanningDialog::SaveConfig() {
 
 wxString DeparturePlanningDialog::FmtDuration(const wxTimeSpan& ts) {
     long secs  = ts.GetSeconds().ToLong();
-    if (secs < 0) return "—";
+    if (secs < 0) return kDash;
     long days  = secs / 86400;
     long hours = (secs % 86400) / 3600;
     long mins  = (secs % 3600)  / 60;

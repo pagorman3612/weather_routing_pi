@@ -221,7 +221,7 @@ wxString DepartureSweepController::FormatDisplayTime(
     int tz_offset_min,
     const wxString& fmt)
 {
-    if (!utc.IsValid()) return "—";
+    if (!utc.IsValid()) return wxString(wchar_t(0x2014));
     wxDateTime local = utc + wxTimeSpan::Minutes(tz_offset_min);
     return local.Format(fmt);
 }
@@ -337,7 +337,7 @@ void DepartureSweepController::StopSweep() {
     // Poll() will collect completions and set m_running = false.
 }
 
-int DepartureSweepController::Poll() {
+int DepartureSweepController::Poll(RouteMapOverlay** grib_slot) {
     if (!m_running) return 0;
 
     int newly_done = 0;
@@ -347,8 +347,14 @@ int DepartureSweepController::Poll() {
         size_t idx           = it->idx;
 
         // Handle mid-computation GRIB requests.
-        if (ov->NeedsGrib() && !ov->Finished())
+        // Must set grib_slot before calling RequestGrib() — the GRIB plugin
+        // responds synchronously via SetPluginMessage and reads that pointer
+        // to know which overlay receives the data.
+        if (ov->NeedsGrib() && !ov->Finished()) {
+            if (grib_slot) *grib_slot = ov;
             ov->RequestGrib(ov->NewTime());
+            if (grib_slot) *grib_slot = nullptr;
+        }
 
         if (!ov->Running()) {
             ov->DeleteThread();
@@ -474,7 +480,7 @@ void DepartureSweepController::StartSweep(const SweepConfig& cfg) {
     m_next_dispatch   = 0;
 }
 void DepartureSweepController::StopSweep() { m_cancelled = true; }
-int  DepartureSweepController::Poll() { m_running = false; return 0; }
+int  DepartureSweepController::Poll(RouteMapOverlay**) { m_running = false; return 0; }
 void DepartureSweepController::ReapplyArrivalFilter(
     const ArrivalWindowParams&, const RankParams&) {}
 void DepartureSweepController::FreeOverlays() {
