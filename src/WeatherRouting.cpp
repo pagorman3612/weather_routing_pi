@@ -43,6 +43,7 @@
 #include "icons.h"
 #include "navobj_util.h"
 #include "ocpn_plugin.h"
+#include "DeparturePlanningDialog.h"
 
 /**
  * Used for NEflag argument to toSDMM_Plugin function from ocpn_plugin.h.
@@ -521,6 +522,9 @@ WeatherRouting::~WeatherRouting() {
     m_RoutingTablePanel->Destroy();
     m_RoutingTablePanel = nullptr;
   }
+
+  delete m_departurePlanningDialog;
+  m_departurePlanningDialog = nullptr;
 }
 
 #ifdef __OCPN__ANDROID__
@@ -2059,6 +2063,19 @@ void WeatherRouting::AddRoutingPanel() {
 
 void WeatherRouting::OnWeatherTable(wxCommandEvent& event) {
   AddRoutingPanel();
+}
+
+void WeatherRouting::OnDeparturePlanning(wxCommandEvent& event) {
+  OpenDeparturePlanning();
+}
+
+void WeatherRouting::OpenDeparturePlanning() {
+  if (!m_departurePlanningDialog) {
+    m_departurePlanningDialog = new DeparturePlanningDialog(GetParent(), *this);
+  }
+  m_departurePlanningDialog->UpdateBaseRoute();
+  m_departurePlanningDialog->Show();
+  m_departurePlanningDialog->Raise();
 }
 
 void WeatherRouting::OnManual(wxCommandEvent& event) {

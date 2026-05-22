@@ -1,9 +1,9 @@
 /*
- * DepartureSweepController.h — WR.1 + WR.2 Departure Sweep
+ * DepartureSweepController.h — WR.1 + WR.2 + WR.3 Departure Sweep
  *
  * Static engine helpers are fully unit-testable without RouteMapOverlay.
- * The async orchestration class skeleton is here; full implementation
- * wires up in WR.3 (DeparturePlanningDialog).
+ * Async orchestration (StartSweep / Poll / FreeOverlays) is coupled to
+ * RouteMapOverlay and runs on the UI thread via wxTimer.
  *
  * Contract: docs/DEPARTURE_SWEEP_CONTRACT_FINAL-1.md §3, §4.
  */
@@ -17,8 +17,9 @@
 #include <list>
 #include <vector>
 
-#include "RouteMap.h"   // PlotData, RouteMapConfiguration
-class RouteMapOverlay;  // forward-declaration only — full type in WR.3
+#include "RouteMap.h"        // PlotData, RouteMapConfiguration
+#include "ComfortProfileLoader.h"
+class RouteMapOverlay;       // full type in DepartureSweepController.cpp
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -78,10 +79,6 @@ public:
     // Testable static helpers (no RouteMapOverlay, no threads)
     // ------------------------------------------------------------------
 
-    // Build ordered list of candidate departure times within [sweep_start, sweep_end].
-    // Clamps to [grib_start, grib_end] and populates result.clamped_* flags.
-    // Returns empty departures list with warning if step_s < delta_time_s or
-    // window collapses after clamping.
     static CandidateListResult BuildCandidateList(
         const wxDateTime& sweep_start,
         const wxDateTime& sweep_end,
@@ -90,9 +87,6 @@ public:
         int step_s,
         int delta_time_s);
 
-    // Single-pass extraction of avg/max TWS and peak swell from PlotData chain.
-    // max_swell_m = NaN when all WVHT values are 0 (no swell data in GRIB).
-    // avg_tws_kn / max_tws_kn / upwind_fraction = NaN when chain is empty.
     static void ExtractPlotStats(
         const std::list<PlotData>& data,
         double& avg_tws_kn,
@@ -100,39 +94,58 @@ public:
         double& max_swell_m,
         double& upwind_fraction);
 
-    // Evaluate whether eta_utc satisfies the arrival window.
-    // Sets miss_reason when returning false.
-    // When params.enabled == false always returns true.
     static bool EvaluateArrivalWindow(
         const wxDateTime& eta_utc,
         const ArrivalWindowParams& params,
         wxString& miss_reason);
 
-    // Format a UTC wxDateTime for display using the given timezone offset (minutes).
     static wxString FormatDisplayTime(
         const wxDateTime& utc,
         int tz_offset_min,
         const wxString& fmt = "%Y-%m-%d %H:%M");
 
-    // Format a timezone offset as "UTC", "UTC+H:MM", or "UTC-H:MM".
     static wxString FormatTzLabel(int tz_offset_min);
 
-    // Rank candidates in-place according to three-tier rules (§4.2).
-    // Re-entrant — call after any filter or mode change.
     static void RankCandidates(
         std::vector<SweepCandidate>& candidates,
         const RankParams& params);
 
+    // Build WaypointSample vector from PlotData for comfort scoring.
+    static std::vector<WaypointSample> ExtractWaypointSamples(
+        const std::list<PlotData>& data);
+
     // ------------------------------------------------------------------
-    // Async sweep orchestration — skeleton; full impl in WR.3
+    // Async sweep orchestration (WR.3 — UI-thread, no OpenCPN-free tests)
     // ------------------------------------------------------------------
 
-    using CompletionCallback =
-        std::function<void(const std::vector<SweepCandidate>&)>;
+    struct SweepConfig {
+        RouteMapConfiguration   base_config;
+        std::vector<wxDateTime> departures;
+        int                     max_concurrent    = 4;
+        ArrivalWindowParams     arrival_params;
+        RankParams              rank_params;
+        ComfortProfileLoader*   profile           = nullptr; // not owned
+    };
 
     DepartureSweepController() = default;
+    ~DepartureSweepController() { FreeOverlays(); }
 
-    bool IsRunning() const { return m_running; }
+    // Start a new sweep. Frees any previous overlays first.
+    void StartSweep(const SweepConfig& cfg);
+
+    // Request cancellation. Already-running overlays are stopped; partial
+    // results are ranked and displayed.
+    void StopSweep();
+
+    bool IsRunning()   const { return m_running; }
+    bool IsCancelled() const { return m_cancelled; }
+    int  CompletedCount() const { return m_completed_count; }
+    int  TotalCount()     const { return (int)m_candidates.size(); }
+
+    // Call from UI timer (~250 ms). Checks running overlays, handles GRIB
+    // requests, collects results, dispatches pending work.
+    // Returns number of newly-completed candidates (0 when idle).
+    int Poll();
 
     const std::vector<SweepCandidate>& GetCandidates() const { return m_candidates; }
 
@@ -140,7 +153,32 @@ public:
         RankCandidates(m_candidates, params);
     }
 
+    void ReapplyArrivalFilter(const ArrivalWindowParams& params,
+                              const RankParams& rank_params);
+
+    // Free all retained RouteMapOverlay objects (succeeded candidates).
+    // Called on dialog close or before a new sweep.
+    void FreeOverlays();
+
+    // Retrieve overlay for candidate index (for Inspect). May be nullptr.
+    RouteMapOverlay* GetOverlay(size_t index) const;
+
 private:
-    bool                        m_running    = false;
-    std::vector<SweepCandidate> m_candidates;
+    void DispatchNext();
+    void CollectCandidate(RouteMapOverlay* ov, size_t idx);
+
+    bool       m_running         = false;
+    bool       m_cancelled       = false;
+    int        m_completed_count = 0;
+    size_t     m_next_dispatch   = 0;
+
+    SweepConfig m_config;
+
+    struct RunEntry {
+        RouteMapOverlay* overlay;
+        size_t           idx;
+    };
+    std::list<RunEntry>           m_running_list;
+    std::vector<SweepCandidate>   m_candidates;
+    std::vector<RouteMapOverlay*> m_overlays; // retained for Inspect; nullptr = failed
 };

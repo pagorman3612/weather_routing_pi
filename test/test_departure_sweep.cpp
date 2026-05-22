@@ -1,18 +1,40 @@
 /*
- * test_departure_sweep.cpp — WR.1 + WR.2 unit tests
+ * test_departure_sweep.cpp — WR.1 + WR.2 + WR.4 unit tests
  *
  * Contract: docs/DEPARTURE_SWEEP_CONTRACT_FINAL-1.md §9.1
- * Tests: all 17 WR.1+WR.2 tests (WR.4 ComfortProfileLoader deferred).
  */
 #include <wx/wx.h>
 #include <gtest/gtest.h>
+#include <ostream>
+
+// Prevent GTest from using ContainerPrinter<wxString> (which requires
+// wxString::const_iterator::~const_iterator from the wx DLL and fails to link).
+void PrintTo(const wxString& s, ::std::ostream* os) {
+    *os << s.utf8_str().data();
+}
 
 #include <cmath>
+#include <cstdio>
+#include <fstream>
 #include <list>
+#include <string>
 #include <vector>
 
 #include "../src/DepartureSweepController.h"
 #include "../src/SolarCalculator.h"
+#include "../src/ComfortProfileLoader.h"
+
+// ---------------------------------------------------------------------------
+// Helper: write a string to a temp file, return the path.
+// ---------------------------------------------------------------------------
+static std::string WriteTempJson(const std::string& content) {
+    char buf[L_tmpnam];
+    std::tmpnam(buf);
+    std::string path = std::string(buf) + ".json";
+    std::ofstream f(path);
+    f << content;
+    return path;
+}
 
 // Helper: UTC wxDateTime from components.
 static wxDateTime UTC(int year, int month, int day, int hour = 0, int min = 0) {
@@ -512,4 +534,188 @@ TEST(DepartureSweep, StepSizeCandidates) {
         base, end12, base, end12, 1800, 3600);
     EXPECT_TRUE(r3.departures.empty());
     EXPECT_FALSE(r3.warning.IsEmpty());
+}
+
+// ============================================================
+// WR.4 — ComfortProfileLoader
+// ============================================================
+
+static const char* kProfile2Feature = R"({
+    "schema_version": 1,
+    "model_kind": "threshold_bins",
+    "profile_id": "test_profile_2f",
+    "input_features": ["tws_kn", "twa_deg"],
+    "parameters": [
+        { "edges": [10.0, 20.0], "penalties": [0.1, 0.5, 0.9] },
+        { "edges": [30.0, 90.0], "penalties": [0.2, 0.4, 0.6] }
+    ]
+})";
+
+static const char* kProfile4Feature = R"({
+    "schema_version": 1,
+    "model_kind": "threshold_bins",
+    "profile_id": "test_profile_4f",
+    "input_features": ["tws_kn", "twa_deg", "wvht_m", "wvper_s"],
+    "parameters": [
+        { "edges": [10.0, 20.0],    "penalties": [0.0, 0.5, 1.0] },
+        { "edges": [45.0, 135.0],   "penalties": [0.0, 0.5, 1.0] },
+        { "edges": [1.5, 3.0],      "penalties": [0.0, 0.5, 1.0] },
+        { "edges": [6.0, 10.0],     "penalties": [0.0, 0.5, 1.0] }
+    ]
+})";
+
+static const char* kProfileExpired = R"({
+    "schema_version": 1,
+    "model_kind": "threshold_bins",
+    "profile_id": "expired_profile",
+    "valid_until": "2020-01-01",
+    "input_features": ["tws_kn"],
+    "parameters": [
+        { "edges": [15.0], "penalties": [0.2, 0.8] }
+    ]
+})";
+
+// -- test_comfort_profile_loader_valid (2-feature) ----------------------------
+TEST(ComfortProfileLoader, Valid2Feature) {
+    std::string path = WriteTempJson(kProfile2Feature);
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err)) << err;
+    EXPECT_TRUE(ldr.IsLoaded());
+    EXPECT_FALSE(ldr.IsExpired());
+    EXPECT_NE(ldr.StatusLabel().find("test_profile_2f"), std::string::npos);
+
+    // Score: tws=15 (bin 1, penalty 0.5), twa=45 (bin 1, penalty 0.4)
+    // → waypoint mean = (0.5 + 0.4)/2 = 0.45
+    std::vector<WaypointSample> s = {{ 15.0, 45.0 }};
+    double score = ldr.Score(s);
+    EXPECT_NEAR(score, 0.45, 1e-6);
+    std::remove(path.c_str());
+}
+
+// -- test_comfort_profile_loader_valid (4-feature) ----------------------------
+TEST(ComfortProfileLoader, Valid4Feature) {
+    std::string path = WriteTempJson(kProfile4Feature);
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err)) << err;
+
+    // tws=25 (>=20, bin 2, pen 1.0), twa=90 (>=45 <135, bin 1, pen 0.5)
+    // wvht=2.0 (>=1.5 <3.0, bin 1, pen 0.5), wvper=8.0 (>=6 <10, bin 1, pen 0.5)
+    // waypoint mean = (1.0 + 0.5 + 0.5 + 0.5) / 4 = 0.625
+    std::vector<WaypointSample> s = {{ 25.0, 90.0, 2.0, 8.0 }};
+    EXPECT_NEAR(ldr.Score(s), 0.625, 1e-6);
+    std::remove(path.c_str());
+}
+
+// -- test_comfort_profile_loader_invalid --------------------------------------
+TEST(ComfortProfileLoader, InvalidSchemaVersion) {
+    std::string path = WriteTempJson(R"({"schema_version":2,"model_kind":"threshold_bins","input_features":[],"parameters":[]})");
+    ComfortProfileLoader ldr;
+    std::string err;
+    EXPECT_FALSE(ldr.Load(path, err));
+    EXPECT_FALSE(err.empty());
+    std::remove(path.c_str());
+}
+
+TEST(ComfortProfileLoader, InvalidModelKind) {
+    std::string path = WriteTempJson(R"({"schema_version":1,"model_kind":"neural_net","input_features":[],"parameters":[]})");
+    ComfortProfileLoader ldr;
+    std::string err;
+    EXPECT_FALSE(ldr.Load(path, err));
+    std::remove(path.c_str());
+}
+
+TEST(ComfortProfileLoader, MismatchedPenaltiesLength) {
+    // penalties has 2 elements but edges has 2 → need 3
+    std::string path = WriteTempJson(R"({"schema_version":1,"model_kind":"threshold_bins",
+        "input_features":["tws_kn"],"parameters":[{"edges":[10.0,20.0],"penalties":[0.1,0.5]}]})");
+    ComfortProfileLoader ldr;
+    std::string err;
+    EXPECT_FALSE(ldr.Load(path, err));
+    std::remove(path.c_str());
+}
+
+TEST(ComfortProfileLoader, NonAscendingEdges) {
+    std::string path = WriteTempJson(R"({"schema_version":1,"model_kind":"threshold_bins",
+        "input_features":["tws_kn"],"parameters":[{"edges":[20.0,10.0],"penalties":[0.1,0.5,0.9]}]})");
+    ComfortProfileLoader ldr;
+    std::string err;
+    EXPECT_FALSE(ldr.Load(path, err));
+    std::remove(path.c_str());
+}
+
+TEST(ComfortProfileLoader, OutOfRangePenalty) {
+    std::string path = WriteTempJson(R"({"schema_version":1,"model_kind":"threshold_bins",
+        "input_features":["tws_kn"],"parameters":[{"edges":[10.0],"penalties":[0.5,1.5]}]})");
+    ComfortProfileLoader ldr;
+    std::string err;
+    EXPECT_FALSE(ldr.Load(path, err));
+    std::remove(path.c_str());
+}
+
+// -- test_comfort_profile_loader_expired --------------------------------------
+TEST(ComfortProfileLoader, Expired) {
+    std::string path = WriteTempJson(kProfileExpired);
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err)) << err; // expired still loads
+    EXPECT_TRUE(ldr.IsLoaded());
+    EXPECT_TRUE(ldr.IsExpired());
+    EXPECT_NE(ldr.StatusLabel().find("(expired)"), std::string::npos);
+
+    // Scoring still works even when expired.
+    // tws=5 < 15 → bin 0, pen 0.2
+    std::vector<WaypointSample> s = {{ 5.0, 0.0 }};
+    EXPECT_NEAR(ldr.Score(s), 0.2, 1e-6);
+    std::remove(path.c_str());
+}
+
+// -- Empty sample list → NaN --------------------------------------------------
+TEST(ComfortProfileLoader, EmptySamples) {
+    std::string path = WriteTempJson(kProfile2Feature);
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err));
+    std::vector<WaypointSample> empty;
+    EXPECT_TRUE(std::isnan(ldr.Score(empty)));
+    std::remove(path.c_str());
+}
+
+// -- BinIndex edge cases ------------------------------------------------------
+TEST(ComfortProfileLoader, BinIndexEdgeCases) {
+    // Via Score: verify boundary behaviour directly.
+    // Profile with single edge at 15.0: penalty below=0.1, above=0.9
+    std::string path = WriteTempJson(R"({"schema_version":1,"model_kind":"threshold_bins",
+        "profile_id":"bin_test","input_features":["tws_kn"],
+        "parameters":[{"edges":[15.0],"penalties":[0.1,0.9]}]})");
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err));
+
+    // x < 15 → bin 0 → 0.1
+    EXPECT_NEAR(ldr.Score({{ 14.9, 0.0 }}), 0.1, 1e-6);
+    // x == 15 → bin 1 → 0.9
+    EXPECT_NEAR(ldr.Score({{ 15.0, 0.0 }}), 0.9, 1e-6);
+    // x > 15 → bin 1 → 0.9
+    EXPECT_NEAR(ldr.Score({{ 25.0, 0.0 }}), 0.9, 1e-6);
+    std::remove(path.c_str());
+}
+
+// -- Multi-waypoint averaging -------------------------------------------------
+TEST(ComfortProfileLoader, MultiWaypointAveraging) {
+    std::string path = WriteTempJson(kProfile2Feature);
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err));
+
+    // wp1: tws=5 (bin0, pen 0.1), twa=20 (bin0, pen 0.2) → mean = 0.15
+    // wp2: tws=25 (bin2, pen 0.9), twa=60 (bin1, pen 0.4) → mean = 0.65
+    // overall = (0.15 + 0.65) / 2 = 0.40
+    std::vector<WaypointSample> samples = {
+        { 5.0, 20.0 },
+        { 25.0, 60.0 }
+    };
+    EXPECT_NEAR(ldr.Score(samples), 0.40, 1e-6);
+    std::remove(path.c_str());
 }

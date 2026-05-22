@@ -197,6 +197,7 @@ protected:
    */
   virtual void OnRoutePosition(wxCommandEvent& event) { event.Skip(); }
   virtual void OnWeatherTable(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnDeparturePlanning(wxCommandEvent& event) { event.Skip(); }
   virtual void OnInformation(wxCommandEvent& event) { event.Skip(); }
   virtual void OnManual(wxCommandEvent& event) { event.Skip(); }
   virtual void OnAbout(wxCommandEvent& event) { event.Skip(); }

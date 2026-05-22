@@ -75,7 +75,9 @@ set(SRC
     ${CMAKE_SOURCE_DIR}/src/RouteSimplifier.cpp
     ${CMAKE_SOURCE_DIR}/src/SettingsDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/StatisticsDialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ComfortProfileLoader.cpp
     ${CMAKE_SOURCE_DIR}/src/DepartureSweepController.cpp
+    ${CMAKE_SOURCE_DIR}/src/DeparturePlanningDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/SolarCalculator.cpp
     ${CMAKE_SOURCE_DIR}/src/SunCalculator.cpp
     ${CMAKE_SOURCE_DIR}/src/Utilities.cpp
@@ -172,6 +174,7 @@ set(DSW_SRC
     mock_plugin_impl.c
     ${CMAKE_SOURCE_DIR}/src/DepartureSweepController.cpp
     ${CMAKE_SOURCE_DIR}/src/SolarCalculator.cpp
+    ${CMAKE_SOURCE_DIR}/src/ComfortProfileLoader.cpp
 )
 add_executable(departure_sweep_tests ${DSW_SRC})
 

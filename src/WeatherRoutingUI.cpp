@@ -215,6 +215,12 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
                      wxEmptyString, wxITEM_NORMAL);
   m_mView->Append(m_mWeatherTable);
 
+  wxMenuItem* m_mDeparturePlanning;
+  m_mDeparturePlanning =
+      new wxMenuItem(m_mView, wxID_ANY, wxString(_("&Departure Planning...")),
+                     wxEmptyString, wxITEM_NORMAL);
+  m_mView->Append(m_mDeparturePlanning);
+
   m_menubar3->Append(m_mView, _("&View"));
 
   m_mHelp = new wxMenu();
@@ -459,6 +465,9 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
   m_mView->Bind(wxEVT_COMMAND_MENU_SELECTED,
                 wxCommandEventHandler(WeatherRoutingBase::OnWeatherTable), this,
                 m_mWeatherTable->GetId());
+  m_mView->Bind(wxEVT_COMMAND_MENU_SELECTED,
+                wxCommandEventHandler(WeatherRoutingBase::OnDeparturePlanning), this,
+                m_mDeparturePlanning->GetId());
   m_mHelp->Bind(wxEVT_COMMAND_MENU_SELECTED,
                 wxCommandEventHandler(WeatherRoutingBase::OnInformation), this,
                 m_mInformation->GetId());

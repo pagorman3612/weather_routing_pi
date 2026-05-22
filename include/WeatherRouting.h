@@ -42,6 +42,7 @@
 
 class weather_routing_pi;
 class WeatherRouting;
+class DeparturePlanningDialog;
 
 /**
  * Class representing a weather routing configuration and its associated route.
@@ -428,6 +429,11 @@ public:
 
   SettingsDialog m_SettingsDialog;
 
+  void OpenDeparturePlanning();
+
+  StatisticsDialog& GetStatisticsDialog() { return m_StatisticsDialog; }
+  PlotDialog&       GetPlotDialog()       { return m_PlotDialog; }
+
 private:
   void CopyDataFiles(wxString from, wxString to);
   void OnCollPaneChanged(wxCollapsiblePaneEvent& event);
@@ -605,6 +611,8 @@ private:
                    const wxString& longitude_minutes, wxString name,
                    const bool suppress_prompt);
 
+  void OnDeparturePlanning(wxCommandEvent& event);
+
   RouteMap* SelectedRouteMap();
   /** Save weather routing as OpenCPN track. */
   void SaveAsTrack(RouteMapOverlay& routemapoverlay);
@@ -664,6 +672,8 @@ private:
 
   wxPoint m_downPos, m_startPos, m_startMouse;
   wxTimer m_tDownTimer;
+
+  DeparturePlanningDialog* m_departurePlanningDialog = nullptr;
 
   weather_routing_pi& m_weather_routing_pi;
 

@@ -1,11 +1,13 @@
 /*
- * DepartureSweepController.cpp — WR.1 + WR.2 Departure Sweep
+ * DepartureSweepController.cpp — WR.1 + WR.2 + WR.3 Departure Sweep
  *
  * Contract: docs/DEPARTURE_SWEEP_CONTRACT_FINAL-1.md §3, §4.
- * Note: RouteMapOverlay integration is deferred to WR.3 (DeparturePlanningDialog).
  */
 #include <wx/wx.h>
 #include "DepartureSweepController.h"
+#ifndef UNIT_TESTS
+#include "RouteMapOverlay.h"
+#endif
 #include "SolarCalculator.h"
 
 #include <algorithm>
@@ -284,3 +286,208 @@ void DepartureSweepController::RankCandidates(
     for (auto* c : tier3) sorted.push_back(*c);
     candidates = std::move(sorted);
 }
+
+std::vector<WaypointSample> DepartureSweepController::ExtractWaypointSamples(
+    const std::list<PlotData>& data)
+{
+    std::vector<WaypointSample> out;
+    out.reserve(data.size());
+    for (const PlotData& p : data) {
+        WaypointSample s;
+        s.tws_kn  = p.twsOverGround;
+        s.twa_deg = HeadingDiff(p.twdOverGround, p.cog);
+        s.wvht_m  = p.WVHT;
+        s.wvper_s = p.WVPER;
+        out.push_back(s);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Async orchestration (WR.3)
+// ---------------------------------------------------------------------------
+
+#ifndef UNIT_TESTS
+
+void DepartureSweepController::StartSweep(const SweepConfig& cfg) {
+    FreeOverlays();
+
+    m_config          = cfg;
+    m_running         = true;
+    m_cancelled       = false;
+    m_completed_count = 0;
+    m_next_dispatch   = 0;
+
+    const size_t n = cfg.departures.size();
+    m_candidates.assign(n, SweepCandidate{});
+    for (size_t i = 0; i < n; ++i)
+        m_candidates[i].departure_utc = cfg.departures[i];
+    m_overlays.assign(n, nullptr);
+
+    // Dispatch first batch.
+    int slots = m_config.max_concurrent;
+    while (slots-- > 0 && m_next_dispatch < n)
+        DispatchNext();
+}
+
+void DepartureSweepController::StopSweep() {
+    m_cancelled = true;
+    for (auto& e : m_running_list)
+        e.overlay->Stop();
+    // Poll() will collect completions and set m_running = false.
+}
+
+int DepartureSweepController::Poll() {
+    if (!m_running) return 0;
+
+    int newly_done = 0;
+
+    for (auto it = m_running_list.begin(); it != m_running_list.end(); ) {
+        RouteMapOverlay* ov = it->overlay;
+        size_t idx           = it->idx;
+
+        // Handle mid-computation GRIB requests.
+        if (ov->NeedsGrib() && !ov->Finished())
+            ov->RequestGrib(ov->NewTime());
+
+        if (!ov->Running()) {
+            ov->DeleteThread();
+            CollectCandidate(ov, idx);
+            ++m_completed_count;
+            ++newly_done;
+            it = m_running_list.erase(it);
+
+            if (!m_cancelled)
+                DispatchNext();
+        } else {
+            ++it;
+        }
+    }
+
+    if (m_running_list.empty() && m_next_dispatch >= m_candidates.size()) {
+        m_running = false;
+        RankCandidates(m_candidates, m_config.rank_params);
+    }
+
+    return newly_done;
+}
+
+void DepartureSweepController::DispatchNext() {
+    if (m_next_dispatch >= m_config.departures.size()) return;
+    size_t idx = m_next_dispatch++;
+
+    RouteMapConfiguration cfg = m_config.base_config;
+    cfg.StartTime      = m_config.departures[idx];
+    cfg.UseCurrentTime = false;
+
+    auto* ov = new RouteMapOverlay;
+    ov->SetConfiguration(cfg);
+
+    wxString err;
+    if (ov->Start(err)) {
+        m_running_list.push_back({ov, idx});
+    } else {
+        SweepCandidate& c = m_candidates[idx];
+        c.succeeded     = false;
+        c.failure_reason = err.empty() ? wxString("Failed to start") : err;
+        delete ov;
+        ++m_completed_count;
+    }
+}
+
+void DepartureSweepController::CollectCandidate(RouteMapOverlay* ov, size_t idx) {
+    SweepCandidate& c = m_candidates[idx];
+    wxString err = ov->GetError();
+
+    if (err.empty()) {
+        c.succeeded = true;
+        c.eta_utc   = ov->EndTime();
+        if (c.eta_utc.IsValid())
+            c.duration = c.eta_utc - c.departure_utc;
+
+        const std::list<PlotData>& pd = ov->GetPlotData();
+        ExtractPlotStats(pd, c.avg_tws_kn, c.max_tws_kn, c.max_swell_m, c.upwind_fraction);
+
+        if (m_config.profile && m_config.profile->IsLoaded()) {
+            auto samples = ExtractWaypointSamples(pd);
+            c.comfort_penalty = m_config.profile->Score(samples);
+        }
+
+        wxString miss;
+        c.arrival_ok  = EvaluateArrivalWindow(c.eta_utc, m_config.arrival_params, miss);
+        c.arrival_miss = miss;
+
+        m_overlays[idx] = ov; // retain for Inspect
+    } else {
+        c.succeeded      = false;
+        c.failure_reason = err;
+        delete ov; // failed overlays are freed immediately
+    }
+}
+
+void DepartureSweepController::ReapplyArrivalFilter(
+    const ArrivalWindowParams& params,
+    const RankParams& rank_params)
+{
+    for (SweepCandidate& c : m_candidates) {
+        if (!c.succeeded) continue;
+        wxString miss;
+        c.arrival_ok   = EvaluateArrivalWindow(c.eta_utc, params, miss);
+        c.arrival_miss = miss;
+    }
+    RankCandidates(m_candidates, rank_params);
+}
+
+void DepartureSweepController::FreeOverlays() {
+    // Stop and clean up any still-running overlays.
+    for (auto& e : m_running_list) {
+        e.overlay->Stop();
+        e.overlay->DeleteThread();
+        delete e.overlay;
+    }
+    m_running_list.clear();
+
+    // Free retained (succeeded) overlays.
+    for (RouteMapOverlay* ov : m_overlays)
+        delete ov;
+    m_overlays.clear();
+
+    m_candidates.clear();
+    m_running         = false;
+    m_cancelled       = false;
+    m_completed_count = 0;
+    m_next_dispatch   = 0;
+}
+
+RouteMapOverlay* DepartureSweepController::GetOverlay(size_t index) const {
+    if (index >= m_overlays.size()) return nullptr;
+    return m_overlays[index];
+}
+
+#else  // UNIT_TESTS — stub implementations (no RouteMapOverlay dependency)
+
+void DepartureSweepController::StartSweep(const SweepConfig& cfg) {
+    (void)cfg; // stub — avoids instantiating RouteMapConfiguration copy ctor
+    m_running         = false;
+    m_cancelled       = false;
+    m_completed_count = 0;
+    m_next_dispatch   = 0;
+}
+void DepartureSweepController::StopSweep() { m_cancelled = true; }
+int  DepartureSweepController::Poll() { m_running = false; return 0; }
+void DepartureSweepController::ReapplyArrivalFilter(
+    const ArrivalWindowParams&, const RankParams&) {}
+void DepartureSweepController::FreeOverlays() {
+    m_running_list.clear();
+    m_overlays.clear();
+    m_candidates.clear();
+    m_running         = false;
+    m_cancelled       = false;
+    m_completed_count = 0;
+    m_next_dispatch   = 0;
+}
+RouteMapOverlay* DepartureSweepController::GetOverlay(size_t) const { return nullptr; }
+void DepartureSweepController::DispatchNext() {}
+void DepartureSweepController::CollectCandidate(RouteMapOverlay*, size_t) {}
+
+#endif // UNIT_TESTS
