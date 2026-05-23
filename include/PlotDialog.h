@@ -67,6 +67,7 @@ private:
   std::list<PlotData> m_PlotData;
 
   bool m_pinned = false; // true while Inspect is showing a sweep candidate
+  RouteMapOverlay* m_lastOverlay = nullptr; // suppress flicker in OnUpdateUI
 
   WeatherRouting& m_WeatherRouting;
 };

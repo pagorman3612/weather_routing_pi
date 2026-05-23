@@ -277,6 +277,7 @@ public:
 
   void SetConfigurationRoute(WeatherRoute* weatherroute);
   void UpdateBoatFilename(wxString boatFileName);
+  void RefreshRouteItem(RouteMapOverlay* ov);
 
   void UpdateCurrentConfigurations();
   void UpdateStates();

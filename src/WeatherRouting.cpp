@@ -3050,6 +3050,18 @@ void WeatherRouting::SetConfigurationRoute(WeatherRoute* weatherroute) {
   }
 }
 
+void WeatherRouting::RefreshRouteItem(RouteMapOverlay* ov) {
+  for (int i = 0; i < m_panel->m_lWeatherRoutes->GetItemCount(); i++) {
+    WeatherRoute* wr = reinterpret_cast<WeatherRoute*>(
+        wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(i)));
+    if (wr && wr->routemapoverlay == ov) {
+      wr->Update(this, false);
+      UpdateItem(i);
+      break;
+    }
+  }
+}
+
 void WeatherRouting::UpdateBoatFilename(wxString boatFileName) {
   for (long index = 0; index < m_panel->m_lWeatherRoutes->GetItemCount();
        index++) {

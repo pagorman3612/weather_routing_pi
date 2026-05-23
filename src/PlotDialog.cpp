@@ -449,5 +449,8 @@ void PlotDialog::UnpinOverlay() {
 
 void PlotDialog::OnUpdateUI(wxUpdateUIEvent& event) {
   if (m_pinned) return;
-  SetRouteMapOverlay(m_WeatherRouting.FirstCurrentRouteMap());
+  RouteMapOverlay* current = m_WeatherRouting.FirstCurrentRouteMap();
+  if (current == m_lastOverlay) return; // no change — skip redraw
+  m_lastOverlay = current;
+  SetRouteMapOverlay(current);
 }

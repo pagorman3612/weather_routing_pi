@@ -88,6 +88,8 @@ void DeparturePlanningDialog::BuildUI() {
 
     m_rbUtc->Bind(wxEVT_RADIOBUTTON,  &DeparturePlanningDialog::OnUtcLocal, this);
     m_rbLocal->Bind(wxEVT_RADIOBUTTON, &DeparturePlanningDialog::OnUtcLocal, this);
+    m_spTzHour->Bind(wxEVT_SPINCTRL,  &DeparturePlanningDialog::OnTzOffsetChange, this);
+    m_spTzMin->Bind(wxEVT_SPINCTRL,   &DeparturePlanningDialog::OnTzOffsetChange, this);
 
     // --- Departure window ---
     wxStaticBoxSizer* sbWin = new wxStaticBoxSizer(
@@ -250,7 +252,7 @@ void DeparturePlanningDialog::BuildUI() {
     m_btnApply->Bind(wxEVT_BUTTON,  &DeparturePlanningDialog::OnApply, this);
     m_btnInspect->Bind(wxEVT_BUTTON, &DeparturePlanningDialog::OnInspect, this);
     btnClose->Bind(wxEVT_BUTTON,    &DeparturePlanningDialog::OnClose, this);
-    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveConfig(); UnpinInspect(); m_controller.FreeOverlays(); Hide(); });
+    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveConfig(); UnpinInspect(); Hide(); });
 
     UpdateWeightControls();
     Layout();
@@ -409,6 +411,7 @@ void DeparturePlanningDialog::OnApply(wxCommandEvent&) {
     cfg.StartTime      = sc.departure_utc;
     cfg.UseCurrentTime = false;
     base->SetConfiguration(cfg);
+    m_wr.RefreshRouteItem(base); // update StartTime in the main route list
 
     SetStatusText(wxString::Format(_("Applied departure %s to base route."),
         DepartureSweepController::FormatDisplayTime(
@@ -452,8 +455,9 @@ void DeparturePlanningDialog::OnClose(wxCommandEvent&) {
     SaveConfig();
     m_pollTimer.Stop();
     UnpinInspect();
-    m_controller.FreeOverlays();
     Hide();
+    // Overlays are retained so Inspect works if the dialog is re-opened.
+    // They are freed by StartSweep (next Run) or the destructor.
 }
 
 // ---------------------------------------------------------------------------
@@ -471,8 +475,11 @@ void DeparturePlanningDialog::OnBrowseProfile(wxCommandEvent&) {
     if (m_profile.Load(path.ToStdString(), err)) {
         m_tcProfilePath->SetValue(path);
         m_stProfileStatus->SetLabel(m_profile.StatusLabel());
+        m_stProfileStatus->SetForegroundColour(
+            m_profile.IsExpired() ? wxColour(200, 140, 0) : wxColour(0, 160, 0));
     } else {
-        m_stProfileStatus->SetLabel(wxString("Invalid profile: ") + err);
+        m_stProfileStatus->SetLabel(wxString("Invalid: ") + err);
+        m_stProfileStatus->SetForegroundColour(*wxRED);
         m_tcProfilePath->SetValue(wxEmptyString);
     }
     Layout();
@@ -488,6 +495,14 @@ void DeparturePlanningDialog::OnUtcLocal(wxCommandEvent&) {
     m_spTzMin->Enable(local);
     m_stTzSign->Enable(local);
     UpdateColumnHeaders();
+}
+
+void DeparturePlanningDialog::OnTzOffsetChange(wxSpinEvent&) {
+    UpdateColumnHeaders();
+    if (!m_controller.IsRunning() && !m_controller.GetCandidates().empty()) {
+        m_controller.ReapplyArrivalFilter(BuildArrivalParams(), BuildRankParams());
+        UpdateResultsList();
+    }
 }
 
 void DeparturePlanningDialog::OnArrivalFilterCheck(wxCommandEvent&) {
@@ -751,6 +766,11 @@ void DeparturePlanningDialog::LoadConfig() {
         if (m_profile.Load(profPath.ToStdString(), err)) {
             m_tcProfilePath->SetValue(profPath);
             m_stProfileStatus->SetLabel(m_profile.StatusLabel());
+            m_stProfileStatus->SetForegroundColour(
+                m_profile.IsExpired() ? wxColour(200, 140, 0) : wxColour(0, 160, 0));
+        } else {
+            m_stProfileStatus->SetLabel(_("File missing or invalid"));
+            m_stProfileStatus->SetForegroundColour(*wxRED);
         }
     }
 

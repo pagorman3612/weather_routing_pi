@@ -41,6 +41,7 @@ private:
     void OnBrowseProfile(wxCommandEvent&);
     void OnPollTimer(wxTimerEvent&);
     void OnUtcLocal(wxCommandEvent&);
+    void OnTzOffsetChange(wxSpinEvent&);
     void OnArrivalFilterCheck(wxCommandEvent&);
     void OnArrivalModeChange(wxCommandEvent&);
     void OnRankModeChange(wxCommandEvent&);
