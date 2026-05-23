@@ -1,6 +1,10 @@
 src/weather_routing_pi.cpp
 src/WeatherRouting.cpp
 src/SunCalculator.cpp
+src/SolarCalculator.cpp
+src/DepartureSweepController.cpp
+src/ComfortProfileLoader.cpp
+src/DeparturePlanningDialog.cpp
 src/ConfigurationDialog.cpp
 src/SettingsDialog.cpp
 src/PlotDialog.cpp

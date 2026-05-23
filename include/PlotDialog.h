@@ -37,6 +37,11 @@ public:
 
   void SetRouteMapOverlay(RouteMapOverlay* routemapoverlay);
 
+  // Pin to a specific overlay (suppresses OnUpdateUI auto-reset).
+  // Used by DeparturePlanningDialog Inspect to prevent flickering.
+  void PinOverlay(RouteMapOverlay* ov);
+  void UnpinOverlay(); // restores normal auto-update behaviour
+
 private:
   void OnMouseEventsPlot(wxMouseEvent& event);
   void OnPaintPlot(wxPaintEvent& event);
@@ -60,6 +65,8 @@ private:
   double m_minvalue[3], m_maxvalue[3];
 
   std::list<PlotData> m_PlotData;
+
+  bool m_pinned = false; // true while Inspect is showing a sweep candidate
 
   WeatherRouting& m_WeatherRouting;
 };

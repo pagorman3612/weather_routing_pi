@@ -719,3 +719,30 @@ TEST(ComfortProfileLoader, MultiWaypointAveraging) {
     EXPECT_NEAR(ldr.Score(samples), 0.40, 1e-6);
     std::remove(path.c_str());
 }
+
+// -- Object (map-keyed) parameters format — WindTrack actual export format ----
+TEST(ComfortProfileLoader, ObjectFormatParameters) {
+    // WindTrack exports parameters as a JSON object keyed by feature name,
+    // not as an array. Verify the loader accepts both.
+    static const char* kProfileObjectFormat = R"({
+        "schema_version": 1,
+        "model_kind": "threshold_bins",
+        "profile_id": "object_format_test",
+        "input_features": ["tws_kn", "twa_deg"],
+        "parameters": {
+            "tws_kn":  { "edges": [10.0, 20.0], "penalties": [0.1, 0.5, 0.9] },
+            "twa_deg": { "edges": [45.0, 135.0], "penalties": [0.2, 0.4, 0.8] }
+        }
+    })";
+    std::string path = WriteTempJson(kProfileObjectFormat);
+    ComfortProfileLoader ldr;
+    std::string err;
+    ASSERT_TRUE(ldr.Load(path, err)) << err;
+    EXPECT_TRUE(ldr.IsLoaded());
+    EXPECT_NE(ldr.StatusLabel().find("object_format_test"), std::string::npos);
+
+    // tws=15 (bin 1, pen 0.5), twa=45 (bin 1, pen 0.4) → mean = 0.45
+    std::vector<WaypointSample> s = {{ 15.0, 45.0 }};
+    EXPECT_NEAR(ldr.Score(s), 0.45, 1e-6);
+    std::remove(path.c_str());
+}

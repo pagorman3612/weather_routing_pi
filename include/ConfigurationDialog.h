@@ -25,6 +25,7 @@
 
 #include "WeatherRoutingUI.h"
 
+#include <map>
 #include <vector>
 
 class WeatherRouting;
@@ -146,6 +147,10 @@ private:
   bool m_bBlockUpdate;
 
   std::vector<wxObject*> m_edited_controls;
+  // GUID cache built by AddWaypoints() — maps waypoint name → GUID.
+  // Lets Update() set StartGUID/EndGUID from the name the user selected,
+  // avoiding a full GetWaypointGUIDArray scan on the first Update() call.
+  std::map<wxString, wxString> m_waypointGuidByName;
 };
 
 #endif

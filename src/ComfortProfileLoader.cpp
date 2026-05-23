@@ -49,19 +49,38 @@ bool ComfortProfileLoader::Load(const std::string& path, std::string& error_msg)
 
     const Json::Value& features = root["input_features"];
     const Json::Value& params   = root["parameters"];
-    if (!features.isArray() || !params.isArray() ||
-        features.size() != params.size()) {
+    if (!features.isArray()) {
+        error_msg = "Invalid profile: input_features must be an array";
+        return false;
+    }
+    if (!params.isArray() && !params.isObject()) {
+        error_msg = "Invalid profile: parameters must be an array or object";
+        return false;
+    }
+    if (params.isArray() && features.size() != params.size()) {
         error_msg = "Invalid profile: parameters length != input_features length";
         return false;
     }
 
+    // Helper lambda: look up a feature's JSON node whether parameters is an
+    // array (indexed parallel to input_features) or an object (keyed by name).
+    auto getParam = [&](Json::ArrayIndex i) -> const Json::Value& {
+        if (params.isArray()) return params[i];
+        return params[features[i].asString()];
+    };
+
     std::vector<ComfortFeature> tmp;
-    tmp.reserve(params.size());
-    for (Json::ArrayIndex i = 0; i < params.size(); ++i) {
+    tmp.reserve(features.size());
+    for (Json::ArrayIndex i = 0; i < features.size(); ++i) {
         ComfortFeature cf;
         cf.name = features[i].asString();
-        const Json::Value& edges    = params[i]["edges"];
-        const Json::Value& penalties = params[i]["penalties"];
+        if (params.isObject() && !params.isMember(cf.name)) {
+            error_msg = "Invalid profile: parameters missing key '" + cf.name + "'";
+            return false;
+        }
+        const Json::Value& entry    = getParam(i);
+        const Json::Value& edges    = entry["edges"];
+        const Json::Value& penalties = entry["penalties"];
         if (!edges.isArray() || !penalties.isArray()) {
             error_msg = "Invalid profile: feature missing edges or penalties array";
             return false;

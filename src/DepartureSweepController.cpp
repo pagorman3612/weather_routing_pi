@@ -20,7 +20,9 @@
 
 namespace {
 
-static const double kNaN = std::numeric_limits<double>::quiet_NaN();
+static const double   kNaN    = std::numeric_limits<double>::quiet_NaN();
+static const wxString kEmDash(wchar_t(0x2014)); // — avoids UTF-8/ANSI mojibake
+static const wxString kEnDash(wchar_t(0x2013)); // –
 
 // Absolute angular difference between two compass headings, result in [0, 180].
 double HeadingDiff(double a, double b) {
@@ -165,8 +167,8 @@ bool DepartureSweepController::EvaluateArrivalWindow(
                 eta_disp_min / 60, eta_disp_min % 60);
             wxString win_early = FmtHHMM(earliest, params.display_tz_offset_min);
             wxString win_late  = FmtHHMM(latest,   params.display_tz_offset_min);
-            miss_reason = wxString::Format("Arrives %s %s — outside window %s–%s %s",
-                eta_disp, tz_label, win_early, win_late, tz_label);
+            miss_reason = wxString::Format("Arrives %s %s %s outside window %s%s%s %s",
+                eta_disp, tz_label, kEmDash, win_early, kEnDash, win_late, tz_label);
         }
         return ok;
     }
@@ -210,8 +212,8 @@ bool DepartureSweepController::EvaluateArrivalWindow(
         if (params.sunset_margin_h > 0.0)
             margin_str = wxString::Format(" (-%s h buffer)",
                 wxString::Format("%.4g", params.sunset_margin_h));
-        miss_reason = wxString::Format("Arrives %s %s — sunset%s %s %s",
-            eta_disp, tz_label, margin_str, set_disp, tz_label);
+        miss_reason = wxString::Format("Arrives %s %s %s sunset%s %s %s",
+            eta_disp, tz_label, kEmDash, margin_str, set_disp, tz_label);
     }
     return ok;
 }
@@ -309,10 +311,12 @@ std::vector<WaypointSample> DepartureSweepController::ExtractWaypointSamples(
 
 #ifndef UNIT_TESTS
 
-void DepartureSweepController::StartSweep(const SweepConfig& cfg) {
+void DepartureSweepController::StartSweep(const SweepConfig& cfg,
+                                           RouteMapOverlay** grib_slot) {
     FreeOverlays();
 
     m_config          = cfg;
+    m_grib_slot       = grib_slot;
     m_running         = true;
     m_cancelled       = false;
     m_completed_count = 0;
@@ -339,6 +343,8 @@ void DepartureSweepController::StopSweep() {
 
 int DepartureSweepController::Poll(RouteMapOverlay** grib_slot) {
     if (!m_running) return 0;
+
+    m_grib_slot = grib_slot; // keep current for DispatchNext calls this tick
 
     int newly_done = 0;
 
@@ -388,6 +394,16 @@ void DepartureSweepController::DispatchNext() {
 
     auto* ov = new RouteMapOverlay;
     ov->SetConfiguration(cfg);
+    ov->Reset(); // initializes m_NewTime=StartTime and m_bNeedsGrib (was missing)
+
+    // Deliver initial GRIB before starting the thread — mirrors WeatherRouting::Start().
+    // Without this the routing thread runs step 2 before GRIB arrives and
+    // immediately fails with "Isochrone exceeds GRIB data range".
+    if (m_grib_slot && cfg.UseGrib) {
+        *m_grib_slot = ov;
+        ov->RequestGrib(ov->NewTime());
+        *m_grib_slot = nullptr;
+    }
 
     wxString err;
     if (ov->Start(err)) {
@@ -403,13 +419,13 @@ void DepartureSweepController::DispatchNext() {
 
 void DepartureSweepController::CollectCandidate(RouteMapOverlay* ov, size_t idx) {
     SweepCandidate& c = m_candidates[idx];
-    wxString err = ov->GetError();
+    wxString err         = ov->GetError();
+    wxString forecasterr = ov->GetWeatherForecastError();
 
-    if (err.empty()) {
+    if (err.empty() && ov->EndTime().IsValid()) {
         c.succeeded = true;
         c.eta_utc   = ov->EndTime();
-        if (c.eta_utc.IsValid())
-            c.duration = c.eta_utc - c.departure_utc;
+        c.duration  = c.eta_utc - c.departure_utc;
 
         const std::list<PlotData>& pd = ov->GetPlotData();
         ExtractPlotStats(pd, c.avg_tws_kn, c.max_tws_kn, c.max_swell_m, c.upwind_fraction);
@@ -420,14 +436,19 @@ void DepartureSweepController::CollectCandidate(RouteMapOverlay* ov, size_t idx)
         }
 
         wxString miss;
-        c.arrival_ok  = EvaluateArrivalWindow(c.eta_utc, m_config.arrival_params, miss);
+        c.arrival_ok   = EvaluateArrivalWindow(c.eta_utc, m_config.arrival_params, miss);
         c.arrival_miss = miss;
 
         m_overlays[idx] = ov; // retain for Inspect
     } else {
-        c.succeeded      = false;
-        c.failure_reason = err;
-        delete ov; // failed overlays are freed immediately
+        c.succeeded = false;
+        if (!err.empty())
+            c.failure_reason = err;
+        else if (!forecasterr.empty())
+            c.failure_reason = forecasterr;
+        else
+            c.failure_reason = "Did not reach destination";
+        delete ov;
     }
 }
 
@@ -472,8 +493,8 @@ RouteMapOverlay* DepartureSweepController::GetOverlay(size_t index) const {
 
 #else  // UNIT_TESTS — stub implementations (no RouteMapOverlay dependency)
 
-void DepartureSweepController::StartSweep(const SweepConfig& cfg) {
-    (void)cfg; // stub — avoids instantiating RouteMapConfiguration copy ctor
+void DepartureSweepController::StartSweep(const SweepConfig& cfg, RouteMapOverlay**) {
+    (void)cfg;
     m_running         = false;
     m_cancelled       = false;
     m_completed_count = 0;

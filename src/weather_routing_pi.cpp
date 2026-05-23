@@ -130,7 +130,7 @@ weather_routing_pi::weather_routing_pi(void* ppimgr)
   // Start continuous address space monitoring (independent of Settings dialog)
   m_addressSpaceTimer.Bind(wxEVT_TIMER,
                            &weather_routing_pi::OnAddressSpaceTimer, this);
-  m_addressSpaceTimer.Start(5000);  // Check every 5 seconds
+  m_addressSpaceTimer.Start(30000);  // Check every 30 seconds
 
   wxLogMessage("weather_routing_pi: Address space monitoring started");
 #endif

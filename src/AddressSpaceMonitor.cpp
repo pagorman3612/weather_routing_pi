@@ -228,7 +228,7 @@ void AddressSpaceMonitor::CheckAndAlert() {
 
   size_t used = GetUsedAddressSpace();
   size_t total = GetTotalAddressSpace();
-  double percent = GetUsagePercent();
+  double percent = (total > 0) ? (100.0 * static_cast<double>(used) / static_cast<double>(total)) : 0.0;
 
   double usedGB = used / (1024.0 * 1024.0 * 1024.0);
   double totalGB = total / (1024.0 * 1024.0 * 1024.0);

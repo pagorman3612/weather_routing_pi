@@ -509,6 +509,11 @@ WeatherRouting::~WeatherRouting() {
 
   SaveXML(m_FileName.GetFullPath());
 
+  // Delete before m_panel so its destructor can safely call
+  // FirstCurrentRouteMap() via PlotDialog::UnpinOverlay().
+  delete m_departurePlanningDialog;
+  m_departurePlanningDialog = nullptr;
+
   for (std::list<WeatherRoute*>::iterator it = m_WeatherRoutes.begin();
        it != m_WeatherRoutes.end(); it++)
     delete *it;
@@ -522,9 +527,6 @@ WeatherRouting::~WeatherRouting() {
     m_RoutingTablePanel->Destroy();
     m_RoutingTablePanel = nullptr;
   }
-
-  delete m_departurePlanningDialog;
-  m_departurePlanningDialog = nullptr;
 }
 
 #ifdef __OCPN__ANDROID__
@@ -632,7 +634,15 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
   }
 
   // polling is bad
-  // Have any of the positions changed since we last rendered?
+  // Throttle position polling to at most once per 30 seconds so that
+  // GetSingleWaypoint (a slow OCPN IPC call when waypoints are numerous)
+  // does not block the UI thread on every render frame.
+  static long s_lastPositionPollSec = 0;
+  long nowSec = wxGetLocalTime();
+  bool doPositionPoll = (nowSec - s_lastPositionPollSec) >= 30;
+  if (doPositionPoll) s_lastPositionPollSec = nowSec;
+
+  // Have any of the positions changed since we last polled?
   bool work = false;
   for (auto& it : RouteMap::Positions) {
     PlugIn_Waypoint waypoint;
@@ -640,7 +650,7 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
     wxString name = it.Name;
     double lat = it.lat;
     double lon = it.lon;
-    if (!(it.GUID.IsEmpty())) {
+    if (doPositionPoll && !(it.GUID.IsEmpty())) {
       gotWaypoint = GetSingleWaypoint(it.GUID, &waypoint);
       if (gotWaypoint) {
         if (lat == waypoint.m_lat && lon == waypoint.m_lon &&
@@ -2282,6 +2292,8 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
             (RouteMapConfiguration::StartDataType)AttributeInt(
                 e, "StartType", RouteMapConfiguration::START_FROM_POSITION);
         configuration.Start = wxString::FromUTF8(e->Attribute("Start"));
+        if (const char* sg = e->Attribute("StartGUID"))
+          configuration.StartGUID = wxString::FromUTF8(sg);
         configuration.UseCurrentTime =
             AttributeBool(e, "UseCurrentTime", false);
         if (configuration.UseCurrentTime) {
@@ -2307,6 +2319,12 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
         }
 
         configuration.End = wxString::FromUTF8(e->Attribute("End"));
+        if (const char* eg = e->Attribute("EndGUID"))
+          configuration.EndGUID = wxString::FromUTF8(eg);
+        configuration.StartLat = AttributeDouble(e, "StartLat", NAN);
+        configuration.StartLon = AttributeDouble(e, "StartLon", NAN);
+        configuration.EndLat   = AttributeDouble(e, "EndLat", NAN);
+        configuration.EndLon   = AttributeDouble(e, "EndLon", NAN);
         configuration.DeltaTime = AttributeDouble(e, "dt", 0);
 
         configuration.boatFileName = wxString::FromUTF8(e->Attribute("Boat"));
@@ -2456,6 +2474,8 @@ void WeatherRouting::SaveXML(wxString filename) {
 
     c->SetAttribute("StartType", configuration.StartType);
     c->SetAttribute("Start", configuration.Start.mb_str());
+    if (configuration.RouteGUID.IsEmpty() && !configuration.StartGUID.IsEmpty())
+      c->SetAttribute("StartGUID", configuration.StartGUID.mb_str());
     c->SetAttribute("UseCurrentTime", configuration.UseCurrentTime);
     if (!configuration.UseCurrentTime) {
       c->SetAttribute("StartDate",
@@ -2464,6 +2484,22 @@ void WeatherRouting::SaveXML(wxString filename) {
                       configuration.StartTime.FormatISOTime().mb_str());
     }
     c->SetAttribute("End", configuration.End.mb_str());
+    if (configuration.RouteGUID.IsEmpty() && !configuration.EndGUID.IsEmpty())
+      c->SetAttribute("EndGUID", configuration.EndGUID.mb_str());
+    if (configuration.RouteGUID.IsEmpty() && !std::isnan(configuration.StartLat) &&
+        !std::isnan(configuration.StartLon)) {
+      c->SetAttribute("StartLat",
+                      wxString::Format("%.6f", configuration.StartLat).mb_str());
+      c->SetAttribute("StartLon",
+                      wxString::Format("%.6f", configuration.StartLon).mb_str());
+    }
+    if (configuration.RouteGUID.IsEmpty() && !std::isnan(configuration.EndLat) &&
+        !std::isnan(configuration.EndLon)) {
+      c->SetAttribute("EndLat",
+                      wxString::Format("%.6f", configuration.EndLat).mb_str());
+      c->SetAttribute("EndLon",
+                      wxString::Format("%.6f", configuration.EndLon).mb_str());
+    }
     c->SetAttribute("dt", configuration.DeltaTime);
 
     c->SetAttribute("Boat", configuration.boatFileName.ToUTF8());

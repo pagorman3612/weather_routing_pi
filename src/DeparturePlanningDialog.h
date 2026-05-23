@@ -56,6 +56,7 @@ private:
 
     // --- Helpers ---
     void BuildUI();
+    void UnpinInspect(); // release PlotDialog pin, safe to call at any time
     void UpdateColumnHeaders();
     void UpdateResultsList();
     void SetSweepRunning(bool running);

@@ -96,8 +96,10 @@ RouteMapConfiguration::RouteMapConfiguration()
       UseMotor(false),
       MotorSpeedThreshold(2.0),
       MotorSpeed(5.0),
-      StartLon(0),
-      EndLon(0),
+      StartLat(NAN),
+      StartLon(NAN),
+      EndLat(NAN),
+      EndLon(NAN),
       grib(nullptr),
       grib_is_data_deficient(false) {}
 
@@ -135,26 +137,39 @@ bool RouteMapConfiguration::Update() {
       EndLon = waypoint.m_lon;
       haveend = true;
     }
-  }
-  wxArrayString waypoint_guids = GetWaypointGUIDArray();
-  PlugIn_Waypoint wp;
+  } else {
+    // For standalone routes, check the coordinate cache BEFORE calling
+    // GetSingleWaypoint. GetSingleWaypoint can be slow (IPC round-trip) and is
+    // called every Render frame via UpdateConfigurations — skipping it when we
+    // already have valid coordinates eliminates the 2-minute UI hang.
+    // Require non-empty GUID to guard against default-constructed configs
+    // where StartLat/StartLon initialise to 0, not NAN.
+    if (!havestart && !StartGUID.IsEmpty() && !std::isnan(StartLat) && !std::isnan(StartLon))
+      havestart = true;
+    if (!haveend && !EndGUID.IsEmpty() && !std::isnan(EndLat) && !std::isnan(EndLon))
+      haveend = true;
 
-  for (const auto& guid : waypoint_guids) {
-    GetSingleWaypoint(guid, &wp);
-
-    if (wp.m_MarkName == Start) {
-      StartLat = wp.m_lat;
-      StartLon = wp.m_lon;
+    // Only call GetSingleWaypoint if we still need to resolve an endpoint.
+    if (!havestart && !StartGUID.IsEmpty() &&
+        GetSingleWaypoint(StartGUID, &waypoint) &&
+        waypoint.m_MarkName == Start) {
+      StartLat = waypoint.m_lat;
+      StartLon = waypoint.m_lon;
       havestart = true;
     }
-    if (wp.m_MarkName == End) {
-      EndLat = wp.m_lat;
-      EndLon = wp.m_lon;
+    if (!haveend && !EndGUID.IsEmpty() &&
+        GetSingleWaypoint(EndGUID, &waypoint) &&
+        waypoint.m_MarkName == End) {
+      EndLat = waypoint.m_lat;
+      EndLon = waypoint.m_lon;
       haveend = true;
     }
   }
+
+  // Positions lookup: fast, no OCPN IPC. Run BEFORE the slow waypoint scan so
+  // routes referencing named Position elements never hit GetWaypointGUIDArray.
   for (const auto& it : RouteMap::Positions) {
-    if (StartType == RouteMapConfiguration::START_FROM_POSITION &&
+    if (!havestart && StartType == RouteMapConfiguration::START_FROM_POSITION &&
         Start == it.Name) {
       double lat = it.lat;
       double lon = it.lon;
@@ -164,10 +179,9 @@ bool RouteMapConfiguration::Update() {
       }
       StartLat = lat;
       StartLon = lon;
-
       havestart = true;
     }
-    if (End == it.Name) {
+    if (!haveend && End == it.Name) {
       double lat = it.lat;
       double lon = it.lon;
       if (!it.GUID.IsEmpty() && GetSingleWaypoint(it.GUID, &waypoint)) {
@@ -177,6 +191,32 @@ bool RouteMapConfiguration::Update() {
       EndLat = lat;
       EndLon = lon;
       haveend = true;
+    }
+    if (havestart && haveend) break;
+  }
+
+  // Name-based fallback: only runs if neither GUID fast-path nor Positions
+  // lookup resolved both endpoints. Caches discovered GUIDs to skip next call.
+  if (!havestart || !haveend) {
+    wxArrayString waypoint_guids = GetWaypointGUIDArray();
+    PlugIn_Waypoint wp;
+
+    for (const auto& guid : waypoint_guids) {
+      GetSingleWaypoint(guid, &wp);
+
+      if (!havestart && wp.m_MarkName == Start) {
+        StartLat = wp.m_lat;
+        StartLon = wp.m_lon;
+        if (RouteGUID.IsEmpty()) StartGUID = guid;
+        havestart = true;
+      }
+      if (!haveend && wp.m_MarkName == End) {
+        EndLat = wp.m_lat;
+        EndLon = wp.m_lon;
+        if (RouteGUID.IsEmpty()) EndGUID = guid;
+        haveend = true;
+      }
+      if (havestart && haveend) break;
     }
   }
 

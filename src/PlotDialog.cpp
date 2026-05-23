@@ -424,6 +424,7 @@ void PlotDialog::OnPaintPlot(wxPaintEvent& event) {
 }
 
 void PlotDialog::OnUpdateRoute(wxCommandEvent& event) {
+  if (m_pinned) return;
   SetRouteMapOverlay(m_WeatherRouting.FirstCurrentRouteMap());
 }
 
@@ -436,6 +437,17 @@ void PlotDialog::SetRouteMapOverlay(RouteMapOverlay* routemapoverlay) {
   m_PlotWindow->Refresh();
 }
 
+void PlotDialog::PinOverlay(RouteMapOverlay* ov) {
+  m_pinned = true;
+  SetRouteMapOverlay(ov);
+}
+
+void PlotDialog::UnpinOverlay() {
+  m_pinned = false;
+  SetRouteMapOverlay(m_WeatherRouting.FirstCurrentRouteMap());
+}
+
 void PlotDialog::OnUpdateUI(wxUpdateUIEvent& event) {
+  if (m_pinned) return;
   SetRouteMapOverlay(m_WeatherRouting.FirstCurrentRouteMap());
 }

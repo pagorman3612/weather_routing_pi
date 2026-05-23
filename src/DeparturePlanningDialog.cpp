@@ -47,6 +47,7 @@ DeparturePlanningDialog::DeparturePlanningDialog(wxWindow* parent, WeatherRoutin
 DeparturePlanningDialog::~DeparturePlanningDialog() {
     SaveConfig();
     m_pollTimer.Stop();
+    UnpinInspect();
     m_controller.FreeOverlays();
 }
 
@@ -74,9 +75,9 @@ void DeparturePlanningDialog::BuildUI() {
     sbTz->Add(m_rbLocal, 0, wxALL | wxALIGN_CENTER_VERTICAL, 4);
     sbTz->Add(new wxStaticText(this, wxID_ANY, _("UTC offset:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 4);
     m_stTzSign = new wxStaticText(this, wxID_ANY, "+");
-    m_spTzHour = new wxSpinCtrl(this, wxID_ANY, "0", wxDefaultPosition, wxSize(50, -1),
+    m_spTzHour = new wxSpinCtrl(this, wxID_ANY, "0", wxDefaultPosition, wxSize(65, -1),
                                 wxSP_ARROW_KEYS, -12, 14, 0);
-    m_spTzMin  = new wxSpinCtrl(this, wxID_ANY, "00", wxDefaultPosition, wxSize(50, -1),
+    m_spTzMin  = new wxSpinCtrl(this, wxID_ANY, "00", wxDefaultPosition, wxSize(65, -1),
                                 wxSP_ARROW_KEYS, 0, 30, 0); // 0 or 30
     sbTz->Add(m_stTzSign, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     sbTz->Add(m_spTzHour, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
@@ -92,14 +93,14 @@ void DeparturePlanningDialog::BuildUI() {
     wxStaticBoxSizer* sbWin = new wxStaticBoxSizer(
         new wxStaticBox(this, wxID_ANY, _("Departure Window")), wxHORIZONTAL);
     sbWin->Add(new wxStaticText(this, wxID_ANY, _("Start:")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 4);
-    m_dpStart = new wxDatePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxSize(110, -1));
-    m_tpStart = new wxTimePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxSize(80, -1));
+    m_dpStart = new wxDatePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxDefaultSize);
+    m_tpStart = new wxTimePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxDefaultSize);
     sbWin->Add(m_dpStart, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     sbWin->Add(m_tpStart, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     sbWin->AddSpacer(12);
     sbWin->Add(new wxStaticText(this, wxID_ANY, _("End:")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 4);
-    m_dpEnd = new wxDatePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxSize(110, -1));
-    m_tpEnd = new wxTimePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxSize(80, -1));
+    m_dpEnd = new wxDatePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxDefaultSize);
+    m_tpEnd = new wxTimePickerCtrl(this, wxID_ANY, wxDefaultDateTime, wxDefaultPosition, wxDefaultSize);
     sbWin->Add(m_dpEnd, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     sbWin->Add(m_tpEnd, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     sbWin->AddSpacer(12);
@@ -177,12 +178,12 @@ void DeparturePlanningDialog::BuildUI() {
     fsz->Add(new wxStaticText(m_pnlFixed, wxID_ANY, _("Arrive between:")),
              0, wxALIGN_CENTER_VERTICAL | wxALL, 4);
     m_tpEarliest = new wxTimePickerCtrl(m_pnlFixed, wxID_ANY, wxDefaultDateTime,
-                                        wxDefaultPosition, wxSize(80, -1));
+                                        wxDefaultPosition, wxDefaultSize);
     fsz->Add(m_tpEarliest, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     fsz->Add(new wxStaticText(m_pnlFixed, wxID_ANY, _("and")),
              0, wxALIGN_CENTER_VERTICAL | wxALL, 4);
     m_tpLatest = new wxTimePickerCtrl(m_pnlFixed, wxID_ANY, wxDefaultDateTime,
-                                      wxDefaultPosition, wxSize(80, -1));
+                                      wxDefaultPosition, wxDefaultSize);
     fsz->Add(m_tpLatest, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     m_pnlFixed->SetSizer(fsz);
     wxDateTime t6(6, 0, 0), t20(20, 0, 0);
@@ -195,7 +196,7 @@ void DeparturePlanningDialog::BuildUI() {
     ssz->Add(new wxStaticText(m_pnlSunset, wxID_ANY, _("Hours before sunset:")),
              0, wxALIGN_CENTER_VERTICAL | wxALL, 4);
     m_spMargin = new wxSpinCtrlDouble(m_pnlSunset, wxID_ANY, "0.0",
-                                      wxDefaultPosition, wxSize(70, -1),
+                                      wxDefaultPosition, wxSize(80, -1),
                                       wxSP_ARROW_KEYS, 0.0, 6.0, 0.0, 0.5);
     ssz->Add(m_spMargin, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     m_pnlSunset->SetSizer(ssz);
@@ -249,7 +250,7 @@ void DeparturePlanningDialog::BuildUI() {
     m_btnApply->Bind(wxEVT_BUTTON,  &DeparturePlanningDialog::OnApply, this);
     m_btnInspect->Bind(wxEVT_BUTTON, &DeparturePlanningDialog::OnInspect, this);
     btnClose->Bind(wxEVT_BUTTON,    &DeparturePlanningDialog::OnClose, this);
-    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveConfig(); m_controller.FreeOverlays(); Hide(); });
+    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveConfig(); UnpinInspect(); m_controller.FreeOverlays(); Hide(); });
 
     UpdateWeightControls();
     Layout();
@@ -267,8 +268,7 @@ void DeparturePlanningDialog::UpdateBaseRoute() {
         return;
     }
     RouteMapConfiguration cfg = base->GetConfiguration();
-    wxString label = wxString::Format("Start %s → End %s",
-        cfg.Start.c_str(), cfg.End.c_str());
+    wxString label = "Start " + cfg.Start + " " + wxString(wxUniChar(0x2192)) + " End " + cfg.End;
     m_stBaseRoute->SetLabel(label);
     m_btnRun->Enable();
 }
@@ -352,7 +352,8 @@ void DeparturePlanningDialog::OnRun(wxCommandEvent&) {
 
     m_lcResults->DeleteAllItems();
     m_sweepStartWall = wxDateTime::Now();
-    m_controller.StartSweep(cfg);
+    UnpinInspect(); // previous overlays are about to be freed by StartSweep
+    m_controller.StartSweep(cfg, &m_wr.m_RouteMapOverlayNeedingGrib);
     SetSweepRunning(true);
     m_gauge->SetRange((int)clr.departures.size());
     m_pollTimer.Start(kPollMs);
@@ -418,6 +419,10 @@ void DeparturePlanningDialog::OnApply(wxCommandEvent&) {
 // Inspect
 // ---------------------------------------------------------------------------
 
+void DeparturePlanningDialog::UnpinInspect() {
+    m_wr.GetPlotDialog().UnpinOverlay();
+}
+
 void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
     long idx = m_lcResults->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (idx == wxNOT_FOUND) return;
@@ -434,7 +439,7 @@ void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
     m_wr.GetStatisticsDialog().Show();
     m_wr.GetStatisticsDialog().Raise();
 
-    m_wr.GetPlotDialog().SetRouteMapOverlay(ov);
+    m_wr.GetPlotDialog().PinOverlay(ov);
     m_wr.GetPlotDialog().Show();
     m_wr.GetPlotDialog().Raise();
 }
@@ -446,6 +451,7 @@ void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
 void DeparturePlanningDialog::OnClose(wxCommandEvent&) {
     SaveConfig();
     m_pollTimer.Stop();
+    UnpinInspect();
     m_controller.FreeOverlays();
     Hide();
 }
@@ -611,15 +617,18 @@ void DeparturePlanningDialog::UpdateResultsList() {
             // Arrival
             if (filterEnabled) {
                 m_lcResults->SetItem(row, COL_ARRIVAL,
-                    c.arrival_ok ? wxString("✓") : c.arrival_miss);
+                    c.arrival_ok ? wxString(wxUniChar(0x2713)) : c.arrival_miss);
             }
             // Status
             m_lcResults->SetItem(row, COL_STATUS, "OK");
 
-            // Tier 2 styling: italic (approximate with different colour)
+            // Tier 2: italic + dimmed per contract §5.3
             if (!c.arrival_ok && filterEnabled) {
                 wxListItem li;
                 li.SetId(row);
+                wxFont font = m_lcResults->GetFont();
+                font.SetStyle(wxFONTSTYLE_ITALIC);
+                li.SetFont(font);
                 li.SetTextColour(wxColour(80, 80, 80));
                 m_lcResults->SetItem(li);
             }

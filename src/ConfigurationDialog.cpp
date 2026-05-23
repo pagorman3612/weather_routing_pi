@@ -363,7 +363,16 @@ void ConfigurationDialog::SetConfigurations(
         break;
       }
     }
-    isPosition ? AddPositions(true) : AddWaypoints(true);
+    if (isPosition) {
+      AddPositions(true);
+    } else {
+      // Don't call AddWaypoints here — scanning all OCPN waypoints on every
+      // route selection causes a multi-minute UI hang.  Just show the current
+      // value; AddWaypoints is called lazily when the user clicks the Waypoint
+      // radio button to change the selection.
+      m_cStart->Clear();
+      m_cStart->Append(it->Start);
+    }
     m_rbStartPositionSelection->SetValue(isPosition);
     m_rbStartWaypointSelection->SetValue(!isPosition);
     m_cStart->SetValue(it->Start);
@@ -373,14 +382,18 @@ void ConfigurationDialog::SetConfigurations(
 
   if (!oRoute) {
     bool isPosition = false;
-    std::cout << "INIT Searching for " << it->End << std::endl;
     for (const auto& p : RouteMap::Positions) {
       if (p.Name == it->End) {
         isPosition = true;
         break;
       }
     }
-    isPosition ? AddPositions(false) : AddWaypoints(false);
+    if (isPosition) {
+      AddPositions(false);
+    } else {
+      m_cEnd->Clear();
+      m_cEnd->Append(it->End);
+    }
     m_rbEndPositionSelection->SetValue(isPosition);
     m_rbEndWaypointSelection->SetValue(!isPosition);
     m_cEnd->SetValue(it->End);
@@ -477,9 +490,19 @@ void ConfigurationDialog::AddWaypoints(const bool atStart) {
   wxComboBox* combobox = atStart ? m_cStart : m_cEnd;
   combobox->Clear();
 
+  // Build/update the name→GUID cache while populating the combo.
+  // This cache is reused in Update() so new routes get their GUID immediately
+  // without requiring a second GetWaypointGUIDArray scan.
+  if (atStart) m_waypointGuidByName.clear();
+
   wxArrayString waypoint_guids = GetWaypointGUIDArray();
-  for (const auto& guid : waypoint_guids)
-    combobox->Append(GetWaypoint_Plugin(guid)->m_MarkName);
+  for (const auto& guid : waypoint_guids) {
+    auto wp = GetWaypoint_Plugin(guid);
+    if (wp) {
+      combobox->Append(wp->m_MarkName);
+      m_waypointGuidByName[wp->m_MarkName] = guid;
+    }
+  }
 }
 
 void ConfigurationDialog::AddPositions(const bool atStart) {
@@ -603,6 +626,27 @@ void ConfigurationDialog::Update() {
     if (configuration.StartType == RouteMapConfiguration::START_FROM_POSITION)
       GET_CHOICE(Start);
     GET_CHOICE(End);
+
+    // Invalidate cached coordinates so Update() always re-resolves from the
+    // current Start/End selection.  Without this, stale coords from a previous
+    // selection (e.g. Lizard-Pt-ENG) survive a Start change and fool the
+    // pre-check into treating the route as already-resolved with wrong coords.
+    configuration.StartLat = configuration.StartLon = NAN;
+    configuration.EndLat   = configuration.EndLon   = NAN;
+
+    // If the user picked a waypoint (not a named Position), inject the GUID
+    // from the cache built by AddWaypoints() so Update() uses the fast
+    // GetSingleWaypoint path instead of the slow GetWaypointGUIDArray scan.
+    if (m_rbStartWaypointSelection->GetValue()) {
+      auto git = m_waypointGuidByName.find(configuration.Start);
+      if (git != m_waypointGuidByName.end())
+        configuration.StartGUID = git->second;
+    }
+    {
+      auto git = m_waypointGuidByName.find(configuration.End);
+      if (git != m_waypointGuidByName.end())
+        configuration.EndGUID = git->second;
+    }
 
     GET_CHECKBOX(UseCurrentTime);
 

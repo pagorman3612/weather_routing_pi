@@ -131,7 +131,9 @@ public:
     ~DepartureSweepController() { FreeOverlays(); }
 
     // Start a new sweep. Frees any previous overlays first.
-    void StartSweep(const SweepConfig& cfg);
+    // grib_slot: pointer to WeatherRouting::m_RouteMapOverlayNeedingGrib — required
+    //   so initial GRIB data is delivered to each route before its thread starts.
+    void StartSweep(const SweepConfig& cfg, RouteMapOverlay** grib_slot = nullptr);
 
     // Request cancellation. Already-running overlays are stopped; partial
     // results are ranked and displayed.
@@ -174,6 +176,7 @@ private:
     int        m_completed_count = 0;
     size_t     m_next_dispatch   = 0;
 
+    RouteMapOverlay** m_grib_slot = nullptr; // for initial GRIB delivery in DispatchNext
     SweepConfig m_config;
 
     struct RunEntry {
