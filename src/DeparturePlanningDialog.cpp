@@ -113,12 +113,20 @@ void DeparturePlanningDialog::BuildUI() {
     sbWin->Add(m_chStep, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     top->Add(sbWin, 0, wxEXPAND | wxALL, 4);
 
-    // Default times: now rounded to hour / now + 5 days
-    wxDateTime now = wxDateTime::Now().ToUTC();
-    now.SetSecond(0); now.SetMinute(0);
-    m_dpStart->SetValue(now); m_tpStart->SetValue(now);
-    wxDateTime end5 = now + wxTimeSpan::Days(5);
-    m_dpEnd->SetValue(end5); m_tpEnd->SetValue(end5);
+    // Default times: current UTC hour / current UTC + 5 days.
+    // Extract UTC components and set them as the "local" picker values so the
+    // pickers visually display UTC time regardless of machine timezone.
+    {
+        wxDateTime now = wxDateTime::Now();
+        wxDateTime initNow;
+        initNow.Set(now.GetDay(wxDateTime::UTC),
+                    now.GetMonth(wxDateTime::UTC),
+                    now.GetYear(wxDateTime::UTC),
+                    now.GetHour(wxDateTime::UTC), 0, 0);
+        m_dpStart->SetValue(initNow); m_tpStart->SetValue(initNow);
+        wxDateTime initEnd = initNow + wxTimeSpan::Days(5);
+        m_dpEnd->SetValue(initEnd); m_tpEnd->SetValue(initEnd);
+    }
 
     // --- Ranking ---
     wxStaticBoxSizer* sbRank = new wxStaticBoxSizer(
@@ -299,16 +307,36 @@ void DeparturePlanningDialog::OnRun(wxCommandEvent&) {
     cfg.base_config = base->GetConfiguration();
 
     // Read departure window from pickers (display tz → UTC).
+    // GetValue() returns local midnight; neutralize the machine's local TZ by
+    // reconstructing UTC midnight from raw date components, then apply display offset.
     int tzOff = GetTzOffsetMin();
-    wxDateTime depStart = m_dpStart->GetValue();
-    wxTimeSpan ts = wxTimeSpan(m_tpStart->GetValue().GetHour(),
-                               m_tpStart->GetValue().GetMinute(), 0);
-    depStart += ts;
-    depStart -= wxTimeSpan::Minutes(tzOff);  // to UTC
+    // GetOffset() returns standard-time offset on Windows (no DST adjustment).
+    // Compute live UTC offset from Now() to get the DST-corrected value.
+    long machineOffSecs;
+    {
+        wxDateTime tNow = wxDateTime::Now();
+        long s = ((long)tNow.GetHour() * 3600 + tNow.GetMinute() * 60 + tNow.GetSecond())
+               - ((long)tNow.GetHour(wxDateTime::UTC) * 3600
+                  + tNow.GetMinute(wxDateTime::UTC) * 60 + tNow.GetSecond(wxDateTime::UTC));
+        if (s >  43200) s -= 86400;
+        if (s < -43200) s += 86400;
+        machineOffSecs = s;
+    }
 
-    wxDateTime depEnd = m_dpEnd->GetValue();
-    ts = wxTimeSpan(m_tpEnd->GetValue().GetHour(), m_tpEnd->GetValue().GetMinute(), 0);
-    depEnd += ts;
+    wxDateTime startDateVal = m_dpStart->GetValue();
+    wxDateTime depStart(startDateVal.GetDay(), startDateVal.GetMonth(),
+                        startDateVal.GetYear(), 0, 0, 0);
+    depStart += wxTimeSpan::Seconds(machineOffSecs);  // local midnight to UTC midnight
+    depStart += wxTimeSpan(m_tpStart->GetValue().GetHour(),
+                           m_tpStart->GetValue().GetMinute(), 0);
+    depStart -= wxTimeSpan::Minutes(tzOff);
+
+    wxDateTime endDateVal = m_dpEnd->GetValue();
+    wxDateTime depEnd(endDateVal.GetDay(), endDateVal.GetMonth(),
+                      endDateVal.GetYear(), 0, 0, 0);
+    depEnd += wxTimeSpan::Seconds(machineOffSecs);
+    depEnd += wxTimeSpan(m_tpEnd->GetValue().GetHour(),
+                         m_tpEnd->GetValue().GetMinute(), 0);
     depEnd -= wxTimeSpan::Minutes(tzOff);
 
     if (depEnd <= depStart) {

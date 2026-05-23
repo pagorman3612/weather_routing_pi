@@ -33,7 +33,7 @@ double HeadingDiff(double a, double b) {
 
 // UTC time-of-day in minutes from midnight.
 int EtaTod(const wxDateTime& eta_utc) {
-    return eta_utc.GetHour() * 60 + eta_utc.GetMinute();
+    return eta_utc.GetHour(wxDateTime::UTC) * 60 + eta_utc.GetMinute(wxDateTime::UTC);
 }
 
 // Format HH:MM from minutes-from-midnight, applying tz_offset_min.
@@ -180,9 +180,9 @@ bool DepartureSweepController::EvaluateArrivalWindow(
 
     bool polar_night = false;
     wxDateTime sunset = SolarCalculator::Sunset(
-        eta_utc.GetYear(),
-        static_cast<int>(eta_utc.GetMonth()) + 1,
-        eta_utc.GetDay(),
+        eta_utc.GetYear(wxDateTime::UTC),
+        static_cast<int>(eta_utc.GetMonth(wxDateTime::UTC)) + 1,
+        eta_utc.GetDay(wxDateTime::UTC),
         params.end_lat, params.end_lon, &polar_night);
 
     if (polar_night) {
@@ -202,7 +202,7 @@ bool DepartureSweepController::EvaluateArrivalWindow(
     }
 
     int eta_tod      = EtaTod(eta_utc);
-    int deadline_tod = deadline.GetHour() * 60 + deadline.GetMinute();
+    int deadline_tod = deadline.GetHour(wxDateTime::UTC) * 60 + deadline.GetMinute(wxDateTime::UTC);
 
     bool ok = (eta_tod <= deadline_tod);
     if (!ok) {
@@ -224,8 +224,19 @@ wxString DepartureSweepController::FormatDisplayTime(
     const wxString& fmt)
 {
     if (!utc.IsValid()) return wxString(wchar_t(0x2014));
-    wxDateTime local = utc + wxTimeSpan::Minutes(tz_offset_min);
-    return local.Format(fmt);
+    // Add display offset, then extract via UTC accessors to avoid wxDateTime::Format()
+    // bleeding in the machine's local timezone on non-UTC systems.
+    wxDateTime shifted = utc + wxTimeSpan::Minutes(tz_offset_min);
+    int h  = shifted.GetHour(wxDateTime::UTC);
+    int mn = shifted.GetMinute(wxDateTime::UTC);
+    if (fmt == "%H:%M")
+        return wxString::Format("%02d:%02d", h, mn);
+    // Default: full date+time (covers the "%Y-%m-%d %H:%M" default parameter).
+    return wxString::Format("%04d-%02d-%02d %02d:%02d",
+        shifted.GetYear(wxDateTime::UTC),
+        (int)shifted.GetMonth(wxDateTime::UTC) + 1,
+        shifted.GetDay(wxDateTime::UTC),
+        h, mn);
 }
 
 wxString DepartureSweepController::FormatTzLabel(int tz_offset_min) {

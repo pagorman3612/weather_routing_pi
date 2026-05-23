@@ -87,6 +87,16 @@ wxDateTime SolarCalculator::Sunset(int year, int month, int day,
     if (mn >= 60) { mn -= 60; ++hr; }
     if (hr >= 24) hr -= 24;
 
+    // hr/mn are UTC components; build as local and then neutralise the machine TZ.
+    // GetOffset() returns standard-time offset on Windows (no DST), so we compute
+    // the live offset from Now() to get the DST-adjusted value.
     wxDateTime dt(day, static_cast<wxDateTime::Month>(month - 1), year, hr, mn, 0, 0);
+    wxDateTime t = wxDateTime::Now();
+    long offSecs = ((long)t.GetHour() * 3600 + t.GetMinute() * 60 + t.GetSecond())
+                 - ((long)t.GetHour(wxDateTime::UTC) * 3600
+                    + t.GetMinute(wxDateTime::UTC) * 60 + t.GetSecond(wxDateTime::UTC));
+    if (offSecs >  43200) offSecs -= 86400;
+    if (offSecs < -43200) offSecs += 86400;
+    dt += wxTimeSpan::Seconds(offSecs);
     return dt;
 }

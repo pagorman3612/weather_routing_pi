@@ -36,9 +36,20 @@ static std::string WriteTempJson(const std::string& content) {
     return path;
 }
 
-// Helper: UTC wxDateTime from components.
+// Helper: create a wxDateTime whose ticks represent the given UTC moment.
+// wxDateTime constructor treats components as LOCAL time. Neutralise by adding
+// the DST-aware UTC offset (computed from Now() because GetOffset() returns the
+// standard-time offset on Windows and omits the DST adjustment).
 static wxDateTime UTC(int year, int month, int day, int hour = 0, int min = 0) {
-    return wxDateTime(day, static_cast<wxDateTime::Month>(month - 1), year, hour, min, 0, 0);
+    wxDateTime dt(day, static_cast<wxDateTime::Month>(month - 1), year, hour, min, 0, 0);
+    wxDateTime t = wxDateTime::Now();
+    long offSecs = ((long)t.GetHour() * 3600 + t.GetMinute() * 60 + t.GetSecond())
+                 - ((long)t.GetHour(wxDateTime::UTC) * 3600
+                    + t.GetMinute(wxDateTime::UTC) * 60 + t.GetSecond(wxDateTime::UTC));
+    if (offSecs >  43200) offSecs -= 86400;
+    if (offSecs < -43200) offSecs += 86400;
+    dt += wxTimeSpan::Seconds(offSecs);
+    return dt;
 }
 
 // Helper: construct a SweepCandidate for ranking tests.
@@ -290,7 +301,7 @@ TEST(SolarCalculator, KnownValues) {
     {
         wxDateTime sunset = SolarCalculator::Sunset(2026, 6, 21, 51.5, 0.0);
         ASSERT_TRUE(sunset.IsValid());
-        int sunset_min = sunset.GetHour() * 60 + sunset.GetMinute();
+        int sunset_min = sunset.GetHour(wxDateTime::UTC) * 60 + sunset.GetMinute(wxDateTime::UTC);
         EXPECT_GE(sunset_min, 1207);
         EXPECT_LE(sunset_min, 1237);
     }
@@ -300,7 +311,7 @@ TEST(SolarCalculator, KnownValues) {
     {
         wxDateTime sunset = SolarCalculator::Sunset(2026, 6, 21, -33.87, 151.21);
         ASSERT_TRUE(sunset.IsValid());
-        int sunset_min = sunset.GetHour() * 60 + sunset.GetMinute();
+        int sunset_min = sunset.GetHour(wxDateTime::UTC) * 60 + sunset.GetMinute(wxDateTime::UTC);
         EXPECT_GE(sunset_min, 404);
         EXPECT_LE(sunset_min, 444);
     }
@@ -310,7 +321,7 @@ TEST(SolarCalculator, KnownValues) {
     {
         wxDateTime sunset = SolarCalculator::Sunset(2026, 3, 20, 0.0, 0.0);
         ASSERT_TRUE(sunset.IsValid());
-        int sunset_min = sunset.GetHour() * 60 + sunset.GetMinute();
+        int sunset_min = sunset.GetHour(wxDateTime::UTC) * 60 + sunset.GetMinute(wxDateTime::UTC);
         EXPECT_GE(sunset_min, 1072);
         EXPECT_LE(sunset_min, 1102);
     }
