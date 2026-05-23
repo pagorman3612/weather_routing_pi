@@ -324,8 +324,10 @@ void DepartureSweepController::StartSweep(const SweepConfig& cfg,
 
     const size_t n = cfg.departures.size();
     m_candidates.assign(n, SweepCandidate{});
-    for (size_t i = 0; i < n; ++i)
+    for (size_t i = 0; i < n; ++i) {
         m_candidates[i].departure_utc = cfg.departures[i];
+        m_candidates[i].original_idx  = i;
+    }
     m_overlays.assign(n, nullptr);
 
     // Dispatch first batch.

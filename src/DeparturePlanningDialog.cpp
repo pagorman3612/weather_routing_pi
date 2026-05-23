@@ -413,9 +413,17 @@ void DeparturePlanningDialog::OnApply(wxCommandEvent&) {
     base->SetConfiguration(cfg);
     m_wr.RefreshRouteItem(base); // update StartTime in the main route list
 
-    SetStatusText(wxString::Format(_("Applied departure %s to base route."),
-        DepartureSweepController::FormatDisplayTime(
-            sc.departure_utc, GetTzOffsetMin())));
+    // Show WRPI-formatted time alongside dialog-tz time so the user can
+    // reconcile what the route list will display.
+    wxString depDisp = DepartureSweepController::FormatDisplayTime(
+        sc.departure_utc, GetTzOffsetMin());
+    wxString depWrpi = sc.departure_utc.Format(
+        "%Y-%m-%d %H:%M", m_wr.m_SettingsDialog.GetTimeZone());
+    wxString msg = wxString::Format(_("Applied departure %s"), depDisp);
+    if (depWrpi != depDisp)
+        msg += wxString::Format(_(" (route list shows %s)"), depWrpi);
+    msg += ".";
+    SetStatusText(msg);
 }
 
 // ---------------------------------------------------------------------------
@@ -434,7 +442,8 @@ void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
     if ((size_t)idx >= cands.size()) return;
     if (!cands[idx].succeeded) return;
 
-    RouteMapOverlay* ov = m_controller.GetOverlay((size_t)idx);
+    // Use original_idx: m_overlays is indexed by sweep order, not rank order.
+    RouteMapOverlay* ov = m_controller.GetOverlay(cands[idx].original_idx);
     if (!ov) return;
 
     std::list<RouteMapOverlay*> ovl = { ov };

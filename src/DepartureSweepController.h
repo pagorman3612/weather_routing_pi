@@ -26,6 +26,7 @@ class RouteMapOverlay;       // full type in DepartureSweepController.cpp
 // ---------------------------------------------------------------------------
 
 struct SweepCandidate {
+    size_t      original_idx    = 0;    // index into m_overlays (stable across ranking)
     wxDateTime  departure_utc;
     wxDateTime  eta_utc;
     wxTimeSpan  duration;
