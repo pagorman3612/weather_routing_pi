@@ -772,6 +772,7 @@ void DeparturePlanningDialog::LoadConfig() {
             m_stProfileStatus->SetLabel(_("File missing or invalid"));
             m_stProfileStatus->SetForegroundColour(*wxRED);
         }
+        m_stProfileStatus->Refresh();
     }
 
     cfg->SetPath(old_path);
