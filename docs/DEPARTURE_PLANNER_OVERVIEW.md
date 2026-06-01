@@ -1,7 +1,7 @@
 # Departure Planner — Feature Overview
 
 **Author:** Patrick Gorman  
-**Date:** 2026-05-21  
+**Date:** 2026-06-01  
 **Status:** Design complete; implementation complete  
 **Detailed spec:** `docs/DEPARTURE_SWEEP_CONTRACT_FINAL-1.md`  
 **Design framework:** `docs/DEPARTURE_PLANNING.md`
@@ -55,7 +55,7 @@ No changes to `RouteMap`, `IsoRoute`, `Position`, or any routing algorithm. The 
 
 | File | Deliverable | Description |
 |------|------------|-------------|
-| `src/DepartureSweepController.h/cpp` | WR.1 + WR.2 | Sweep queue, thread throttle, result collection, ranking engine. Retains succeeded `RouteMapOverlay` objects for the Inspect action until dialog close. No wx dependency beyond `wxDateTime`. |
+| `src/DepartureSweepController.h/cpp` | WR.1 + WR.2 | Sweep queue, thread throttle, result collection, ranking engine. `RouteMapOverlay` objects are freed immediately after stats extraction to conserve 32-bit address space; lightweight `SweepCandidate` structs are retained for re-sort, re-filter, and Inspect. Inspect triggers a single-candidate on-demand recompute. No wx dependency beyond `wxDateTime`. |
 | `src/DeparturePlanningDialog.h/cpp` | WR.3 | Non-modal wx dialog. Communicates with `DepartureSweepController` via `wxCallAfter`. |
 | `src/ComfortProfileLoader.h/cpp` | WR.4 | Load, validate, and score a WindTrack comfort profile JSON file against a `PlotData` chain. No wx; uses jsoncpp (already a WRPI dependency). |
 | `src/SolarCalculator.h/cpp` | §3.6.2 | Standalone sunset calculation (NOAA algorithm, ±5 min accuracy at latitudes below 70°). No wx, no OpenCPN API. Fully unit-testable. |
@@ -149,7 +149,7 @@ The profile file path, ranking mode, balanced weight, and display timezone offse
 
 ## Inspect action
 
-Clicking **Inspect** on a succeeded candidate opens WRPI's existing `StatisticsDialog` and `PlotDialog` pointed at that candidate's retained `RouteMapOverlay`. No new dialog classes required. The candidate overlay does not appear in the main route list. Closing the Departure Planning dialog dismisses both inspect dialogs and frees all retained overlays.
+Clicking **Inspect** on a succeeded candidate triggers an on-demand single-candidate recompute: the controller clones the base configuration with that candidate's departure time and runs the routing engine for that one departure. The **Inspect** button label changes to **Inspecting...** during the recompute (typically 5–30 seconds depending on route length and GRIB density). On completion, WRPI's existing `StatisticsDialog` and `PlotDialog` are opened against the freshly computed overlay. No new dialog classes required. The candidate overlay does not appear in the main route list. Closing the Departure Planning dialog frees the inspect overlay.
 
 **Apply** copies the candidate's `departure_utc` into the base configuration's `StartTime` and does nothing else — the user then runs the route manually from the main WRPI dialog as normal.
 
@@ -174,6 +174,18 @@ All existing WRPI unit tests continue to pass — no routing algorithm is modifi
 | Visual verification in OpenCPN | Confirmed working |
 
 Both sides of the integration are production-ready. The comfort profile format is frozen; the WindTrack export/load/validate pipeline is fully tested. The WRPI implementation is complete and has been verified end-to-end in OpenCPN.
+
+---
+
+## Post-release refinements (2026-06-01)
+
+Three improvements delivered after initial visual verification, addressing issues found during extended use:
+
+| Commit | Change |
+|--------|--------|
+| `fab1f21` | **Overlay memory optimization** — `RouteMapOverlay` objects freed immediately after stats extraction rather than retained until dialog close. Inspect recomputes on demand. Eliminates address-space pressure (OpenCPN is a 32-bit process) when sweeping large candidate sets. |
+| `9fdca95` | **Cancel completion bug** — After cancelling a mid-sweep run, `IsRunning()` would remain true and the Run button would stay disabled, requiring an OCPN restart to recover. Fixed by including the cancelled state in the sweep-complete condition. |
+| `c1f3113` | **Inspect progress indicator** — The Inspect button now shows "Inspecting..." and disables during the on-demand recompute so users know the engine is working. |
 
 ---
 
