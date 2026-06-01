@@ -387,7 +387,8 @@ int DepartureSweepController::Poll(RouteMapOverlay** grib_slot) {
         }
     }
 
-    if (m_running_list.empty() && m_next_dispatch >= m_candidates.size()) {
+    if (m_running_list.empty() &&
+        (m_next_dispatch >= m_candidates.size() || m_cancelled)) {
         m_running = false;
         RankCandidates(m_candidates, m_config.rank_params);
     }
