@@ -339,8 +339,6 @@ void DepartureSweepController::StartSweep(const SweepConfig& cfg,
         m_candidates[i].departure_utc = cfg.departures[i];
         m_candidates[i].original_idx  = i;
     }
-    m_overlays.assign(n, nullptr);
-
     // Dispatch first batch.
     int slots = m_config.max_concurrent;
     while (slots-- > 0 && m_next_dispatch < n)
@@ -452,7 +450,7 @@ void DepartureSweepController::CollectCandidate(RouteMapOverlay* ov, size_t idx)
         c.arrival_ok   = EvaluateArrivalWindow(c.eta_utc, m_config.arrival_params, miss);
         c.arrival_miss = miss;
 
-        m_overlays[idx] = ov; // retain for Inspect
+        delete ov; // stats extracted; free immediately to conserve address space
     } else {
         c.succeeded = false;
         if (!err.empty())
@@ -479,7 +477,7 @@ void DepartureSweepController::ReapplyArrivalFilter(
 }
 
 void DepartureSweepController::FreeOverlays() {
-    // Stop and clean up any still-running overlays.
+    // Stop and clean up any still-running sweep overlays.
     for (auto& e : m_running_list) {
         e.overlay->Stop();
         e.overlay->DeleteThread();
@@ -487,10 +485,10 @@ void DepartureSweepController::FreeOverlays() {
     }
     m_running_list.clear();
 
-    // Free retained (succeeded) overlays.
-    for (RouteMapOverlay* ov : m_overlays)
-        delete ov;
-    m_overlays.clear();
+    // Overlays for succeeded candidates were already freed immediately after
+    // stats extraction in CollectCandidate — nothing to free here.
+
+    FreeInspectOverlay();
 
     m_candidates.clear();
     m_running         = false;
@@ -499,9 +497,81 @@ void DepartureSweepController::FreeOverlays() {
     m_next_dispatch   = 0;
 }
 
-RouteMapOverlay* DepartureSweepController::GetOverlay(size_t index) const {
-    if (index >= m_overlays.size()) return nullptr;
-    return m_overlays[index];
+// ---------------------------------------------------------------------------
+// Inspect recompute
+// ---------------------------------------------------------------------------
+
+void DepartureSweepController::StartInspect(const wxDateTime& departure_utc,
+                                             RouteMapOverlay** grib_slot) {
+    FreeInspectOverlay();
+
+    m_inspect_done   = false;
+    m_inspect_failed = false;
+
+    RouteMapConfiguration cfg = m_config.base_config;
+    cfg.StartTime      = departure_utc;
+    cfg.UseCurrentTime = false;
+
+    auto* ov = new RouteMapOverlay;
+    ov->SetConfiguration(cfg);
+    ov->Reset();
+
+    if (grib_slot && cfg.UseGrib) {
+        *grib_slot = ov;
+        ov->RequestGrib(ov->NewTime());
+        *grib_slot = nullptr;
+    }
+
+    wxString err;
+    if (ov->Start(err)) {
+        m_inspect_overlay = ov;
+    } else {
+        delete ov;
+        m_inspect_failed = true;
+    }
+}
+
+int DepartureSweepController::PollInspect(RouteMapOverlay** grib_slot) {
+    if (!m_inspect_overlay) return m_inspect_failed ? -1 : 0;
+    if (m_inspect_done)     return 1;
+
+    RouteMapOverlay* ov = m_inspect_overlay;
+
+    if (ov->NeedsGrib() && !ov->Finished()) {
+        if (grib_slot) *grib_slot = ov;
+        ov->RequestGrib(ov->NewTime());
+        if (grib_slot) *grib_slot = nullptr;
+    }
+
+    if (!ov->Running()) {
+        ov->DeleteThread();
+        wxString err = ov->GetError();
+        if (!err.empty() || !ov->EndTime().IsValid()) {
+            m_inspect_failed = true;
+            delete m_inspect_overlay;
+            m_inspect_overlay = nullptr;
+            return -1;
+        }
+        m_inspect_done = true;
+        return 1;
+    }
+    return 0;
+}
+
+bool DepartureSweepController::IsInspecting() const {
+    return m_inspect_overlay != nullptr && !m_inspect_done && !m_inspect_failed;
+}
+
+void DepartureSweepController::FreeInspectOverlay() {
+    if (!m_inspect_overlay) return;
+    if (!m_inspect_done) {
+        m_inspect_overlay->Stop();
+        m_inspect_overlay->DeleteThread();
+    }
+    delete m_inspect_overlay;
+    m_inspect_overlay = nullptr;
+    m_inspect_done    = false;
+    m_inspect_failed  = false;
 }
 
 #else  // UNIT_TESTS — stub implementations (no RouteMapOverlay dependency)
@@ -519,14 +589,21 @@ void DepartureSweepController::ReapplyArrivalFilter(
     const ArrivalWindowParams&, const RankParams&) {}
 void DepartureSweepController::FreeOverlays() {
     m_running_list.clear();
-    m_overlays.clear();
     m_candidates.clear();
     m_running         = false;
     m_cancelled       = false;
     m_completed_count = 0;
     m_next_dispatch   = 0;
+    FreeInspectOverlay();
 }
-RouteMapOverlay* DepartureSweepController::GetOverlay(size_t) const { return nullptr; }
+void DepartureSweepController::StartInspect(const wxDateTime&, RouteMapOverlay**) {}
+int  DepartureSweepController::PollInspect(RouteMapOverlay**) { return 0; }
+bool DepartureSweepController::IsInspecting() const { return false; }
+void DepartureSweepController::FreeInspectOverlay() {
+    m_inspect_overlay = nullptr;
+    m_inspect_done    = false;
+    m_inspect_failed  = false;
+}
 void DepartureSweepController::DispatchNext() {}
 void DepartureSweepController::CollectCandidate(RouteMapOverlay*, size_t) {}
 
