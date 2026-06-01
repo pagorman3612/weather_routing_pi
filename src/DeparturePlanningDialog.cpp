@@ -434,10 +434,12 @@ void DeparturePlanningDialog::OnPollTimer(wxTimerEvent&) {
             m_wr.GetPlotDialog().Show();
             m_wr.GetPlotDialog().Raise();
             m_inspecting = false;
+            m_btnInspect->SetLabel(_("Inspect"));
             m_btnInspect->Enable();
             SetStatusText(_("Inspect ready."));
         } else if (result == -1) {
             m_inspecting = false;
+            m_btnInspect->SetLabel(_("Inspect"));
             m_btnInspect->Enable();
             SetStatusText(_("Inspect recompute failed."));
         }
@@ -507,6 +509,7 @@ void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
     m_controller.StartInspect(cands[idx].departure_utc,
                                &m_wr.m_RouteMapOverlayNeedingGrib);
     m_inspecting = true;
+    m_btnInspect->SetLabel(_("Inspecting..."));
     m_btnInspect->Disable();
     SetStatusText(_("Computing inspect route..."));
 
