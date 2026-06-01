@@ -394,29 +394,58 @@ void DeparturePlanningDialog::OnRun(wxCommandEvent&) {
 // ---------------------------------------------------------------------------
 
 void DeparturePlanningDialog::OnPollTimer(wxTimerEvent&) {
-    int newDone = m_controller.Poll(&m_wr.m_RouteMapOverlayNeedingGrib);
-    if (newDone > 0)
-        UpdateResultsList();
+    // --- Sweep polling ---
+    if (m_controller.IsRunning()) {
+        int newDone = m_controller.Poll(&m_wr.m_RouteMapOverlayNeedingGrib);
+        if (newDone > 0)
+            UpdateResultsList();
 
-    int total  = m_controller.TotalCount();
-    int done   = m_controller.CompletedCount();
-    m_gauge->SetValue(done);
+        int total  = m_controller.TotalCount();
+        int done   = m_controller.CompletedCount();
+        m_gauge->SetValue(done);
 
-    wxTimeSpan elapsed = wxDateTime::Now() - m_sweepStartWall;
-    SetStatusText(wxString::Format(_("%d of %d complete (elapsed: %s)"),
-        done, total, elapsed.Format("%H:%M:%S")));
+        wxTimeSpan elapsed = wxDateTime::Now() - m_sweepStartWall;
+        SetStatusText(wxString::Format(_("%d of %d complete (elapsed: %s)"),
+            done, total, elapsed.Format("%H:%M:%S")));
 
-    if (!m_controller.IsRunning()) {
-        m_pollTimer.Stop();
-        UpdateResultsList();
-        SetSweepRunning(false);
-        if (m_controller.IsCancelled())
-            SetStatusText(wxString::Format(
-                _("Cancelled — %d of %d candidates complete."), done, total));
-        else
-            SetStatusText(wxString::Format("Sweep complete %s %d candidates.",
-                kDash, total));
+        if (!m_controller.IsRunning()) {
+            UpdateResultsList();
+            SetSweepRunning(false);
+            if (m_controller.IsCancelled())
+                SetStatusText(wxString::Format(
+                    _("Cancelled — %d of %d candidates complete."), done, total));
+            else
+                SetStatusText(wxString::Format("Sweep complete %s %d candidates.",
+                    kDash, total));
+        }
     }
+
+    // --- Inspect recompute polling ---
+    if (m_inspecting) {
+        int result = m_controller.PollInspect(&m_wr.m_RouteMapOverlayNeedingGrib);
+        if (result == 1) {
+            // Succeeded — open dialogs on the completed overlay.
+            RouteMapOverlay* ov = m_controller.GetInspectOverlay();
+            std::list<RouteMapOverlay*> ovl = { ov };
+            m_wr.GetStatisticsDialog().SetRouteMapOverlays(ovl);
+            m_wr.GetStatisticsDialog().Show();
+            m_wr.GetStatisticsDialog().Raise();
+            m_wr.GetPlotDialog().PinOverlay(ov);
+            m_wr.GetPlotDialog().Show();
+            m_wr.GetPlotDialog().Raise();
+            m_inspecting = false;
+            m_btnInspect->Enable();
+            SetStatusText(_("Inspect ready."));
+        } else if (result == -1) {
+            m_inspecting = false;
+            m_btnInspect->Enable();
+            SetStatusText(_("Inspect recompute failed."));
+        }
+    }
+
+    // Stop timer only when both sweep and inspect are idle.
+    if (!m_controller.IsRunning() && !m_inspecting)
+        m_pollTimer.Stop();
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +489,8 @@ void DeparturePlanningDialog::OnApply(wxCommandEvent&) {
 
 void DeparturePlanningDialog::UnpinInspect() {
     m_wr.GetPlotDialog().UnpinOverlay();
+    m_controller.FreeInspectOverlay();
+    m_inspecting = false;
 }
 
 void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
@@ -470,18 +501,18 @@ void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
     if ((size_t)idx >= cands.size()) return;
     if (!cands[idx].succeeded) return;
 
-    // Use original_idx: m_overlays is indexed by sweep order, not rank order.
-    RouteMapOverlay* ov = m_controller.GetOverlay(cands[idx].original_idx);
-    if (!ov) return;
+    // Unpin any previous inspect before starting a new recompute.
+    UnpinInspect();
 
-    std::list<RouteMapOverlay*> ovl = { ov };
-    m_wr.GetStatisticsDialog().SetRouteMapOverlays(ovl);
-    m_wr.GetStatisticsDialog().Show();
-    m_wr.GetStatisticsDialog().Raise();
+    m_controller.StartInspect(cands[idx].departure_utc,
+                               &m_wr.m_RouteMapOverlayNeedingGrib);
+    m_inspecting = true;
+    m_btnInspect->Disable();
+    SetStatusText(_("Computing inspect route..."));
 
-    m_wr.GetPlotDialog().PinOverlay(ov);
-    m_wr.GetPlotDialog().Show();
-    m_wr.GetPlotDialog().Raise();
+    // Keep the poll timer alive so PollInspect() is called each tick.
+    if (!m_pollTimer.IsRunning())
+        m_pollTimer.Start(kPollMs);
 }
 
 // ---------------------------------------------------------------------------

@@ -82,6 +82,7 @@ private:
     wxTimer                     m_pollTimer;
     wxDateTime                  m_sweepStartWall; // for elapsed display
     bool                        m_arrivalColVisible = false;
+    bool                        m_inspecting        = false;
 
     // --- Controls ---
     wxStaticText*    m_stBaseRoute;

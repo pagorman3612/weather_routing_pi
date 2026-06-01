@@ -161,12 +161,39 @@ public:
     void ReapplyArrivalFilter(const ArrivalWindowParams& params,
                               const RankParams& rank_params);
 
-    // Free all retained RouteMapOverlay objects (succeeded candidates).
-    // Called on dialog close or before a new sweep.
+    // Free all sweep state. Called before a new sweep or on destructor.
+    // Also frees any in-progress inspect overlay.
     void FreeOverlays();
 
-    // Retrieve overlay for candidate index (for Inspect). May be nullptr.
-    RouteMapOverlay* GetOverlay(size_t index) const;
+    // ------------------------------------------------------------------
+    // On-demand Inspect recompute
+    // Overlays are freed immediately after stats extraction; Inspect
+    // re-runs just the selected candidate on demand.
+    // ------------------------------------------------------------------
+
+    // Start a single-candidate recompute for Inspect.
+    // Uses m_config.base_config with departure_utc substituted as StartTime.
+    // Frees any previous inspect overlay first (caller must have already
+    // unpinned it from PlotDialog). grib_slot must remain valid until
+    // FreeInspectOverlay() or the next StartInspect().
+    void StartInspect(const wxDateTime& departure_utc,
+                      RouteMapOverlay** grib_slot = nullptr);
+
+    // Poll the inspect overlay (call from UI timer).
+    // Returns: 0 = still running, 1 = succeeded, -1 = failed.
+    // When 1 is returned, call GetInspectOverlay() to open dialogs;
+    // the overlay remains live until FreeInspectOverlay() / UnpinInspect.
+    int PollInspect(RouteMapOverlay** grib_slot = nullptr);
+
+    // True while a recompute is in progress (not yet done or failed).
+    bool IsInspecting() const;
+
+    // The completed inspect overlay. Non-null only after PollInspect returns 1,
+    // until FreeInspectOverlay() is called.
+    RouteMapOverlay* GetInspectOverlay() const { return m_inspect_overlay; }
+
+    // Free and null the inspect overlay (stop thread first if still running).
+    void FreeInspectOverlay();
 
 private:
     void DispatchNext();
@@ -177,14 +204,18 @@ private:
     int        m_completed_count = 0;
     size_t     m_next_dispatch   = 0;
 
-    RouteMapOverlay** m_grib_slot = nullptr; // for initial GRIB delivery in DispatchNext
+    RouteMapOverlay** m_grib_slot = nullptr;
     SweepConfig m_config;
 
     struct RunEntry {
         RouteMapOverlay* overlay;
         size_t           idx;
     };
-    std::list<RunEntry>           m_running_list;
-    std::vector<SweepCandidate>   m_candidates;
-    std::vector<RouteMapOverlay*> m_overlays; // retained for Inspect; nullptr = failed
+    std::list<RunEntry>         m_running_list;
+    std::vector<SweepCandidate> m_candidates;
+
+    // Inspect recompute state
+    RouteMapOverlay* m_inspect_overlay  = nullptr;
+    bool             m_inspect_done     = false;
+    bool             m_inspect_failed   = false;
 };
