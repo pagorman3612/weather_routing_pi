@@ -229,7 +229,7 @@ void DeparturePlanningDialog::BuildUI() {
         _("Avg TWS (kn)"), _("Max TWS (kn)"), _("Max Swell (m)"),
         _("Comfort"), _("Arrival"), _("Status")
     };
-    static const int colWidths[COL_COUNT] = { 45, 145, 145, 80, 110, 110, 105, 70, 85, 120 };
+    static const int colWidths[COL_COUNT] = { 45, 165, 155, 95, 128, 128, 128, 82, 85, 130 };
     for (int i = 0; i < COL_COUNT; ++i)
         m_lcResults->InsertColumn(i, colHdrs[i], wxLIST_FORMAT_LEFT, colWidths[i]);
     top->Add(m_lcResults, 1, wxEXPAND | wxALL, 4);
