@@ -138,14 +138,38 @@ feature (TWS, wave height, wave period, TWA), and the result is normalised by th
 features. It is **a passage average, not a worst-case value** — a short brutal stretch is
 smoothed by easy miles before and after it.
 
-The score is most sensitive to **wave height, wave period, and point of sail**. For a profile
-configured with TWS thresholds near gale force (28+ kn), wind speed is nearly a non-factor on
-typical offshore passages; the dominant drivers are sea state and heading.
+### The cardinal rule: relative, not absolute
 
-### Score → passage character → WRPI label
+> **The comfort score is meaningful in relative terms, not absolute terms. Use it to rank
+> candidates against each other — not to judge the passage itself.**
 
-| Score | Passage character | WRPI typically shows |
-|-------|------------------|----------------------|
+The absolute number is entirely dependent on how the comfort profile was configured. A skipper
+who set TWS thresholds at 15/20 kn will see scores of 0.6+ on conditions that a profile
+calibrated at 28/30 kn scores at 0.22. The same weather window, the same route, wildly
+different numbers. Neither is wrong — they reflect different skippers' comfort envelopes.
+
+Within a single sweep — same profile, same departure window — a lower score is always a better
+candidate. That ranking is stable and trustworthy regardless of how the profile is calibrated.
+The absolute number is not portable across profiles or between users.
+
+### The right workflow
+
+1. **Sort by comfort score** to surface the best candidates from the sweep.
+2. **Inspect the short list in WRPI** to get the per-waypoint Good / Bumpy / Difficult
+   assessment before committing. WRPI's label is profile-independent and is the portable
+   ground truth for judging whether a passage is actually acceptable.
+
+The comfort score narrows the field. WRPI blesses the choice.
+
+### Example score ranges (profile-specific)
+
+The ranges below were observed on a Jeanneau SO49DS with TWS thresholds set near gale force
+(28/28.5 kn), so wind speed contributes minimally and the score is driven by wave height,
+wave period, and point of sail. **These ranges will not transfer to a differently calibrated
+profile** — treat them as illustrative, not universal.
+
+| Score | Passage character | WRPI typically showed |
+|-------|------------------|-----------------------|
 | < 0.15 | Running or reaching in light air, long swell | Good |
 | 0.15 – 0.25 | Trades-style: reaching, 1.5–2 m swell, decent period | Good to Bumpy |
 | 0.25 – 0.35 | Mixed: some beating, or shorter wave period | Bumpy |
@@ -157,9 +181,6 @@ The WRPI label and the comfort score are **complementary, not equivalent.** WRPI
 route label — one rough stretch makes the whole route "Bumpy." The comfort score averages over
 the full passage and uses true wind angle. A route that is mostly easy with one hard overnight
 beat may score 0.28 (Bumpy boundary) while WRPI calls it "Bumpy" due to that one stretch.
-
-**Workflow:** use the comfort score to narrow the candidate list, then Inspect the short-listed
-departures in WRPI to get the per-waypoint Good/Bumpy/Difficult assessment before committing.
 
 ### Known limitation (KL-1)
 
