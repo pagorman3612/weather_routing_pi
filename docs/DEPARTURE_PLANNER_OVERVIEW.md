@@ -130,6 +130,48 @@ The profile file path, ranking mode, balanced weight, and display timezone offse
 
 ---
 
+## Comfort score — practical interpretation
+
+The `comfort_penalty` column is a number in [0, 1] computed as the time-weighted mean of
+per-waypoint penalties across the route. Each waypoint contributes one penalty per active
+feature (TWS, wave height, wave period, TWA), and the result is normalised by the number of
+features. It is **a passage average, not a worst-case value** — a short brutal stretch is
+smoothed by easy miles before and after it.
+
+The score is most sensitive to **wave height, wave period, and point of sail**. For a profile
+configured with TWS thresholds near gale force (28+ kn), wind speed is nearly a non-factor on
+typical offshore passages; the dominant drivers are sea state and heading.
+
+### Score → passage character → WRPI label
+
+| Score | Passage character | WRPI typically shows |
+|-------|------------------|----------------------|
+| < 0.15 | Running or reaching in light air, long swell | Good |
+| 0.15 – 0.25 | Trades-style: reaching, 1.5–2 m swell, decent period | Good to Bumpy |
+| 0.25 – 0.35 | Mixed: some beating, or shorter wave period | Bumpy |
+| 0.35 – 0.50 | Sustained beat into chop, or heavy swell | Bumpy to Difficult |
+| > 0.50 | Multiple bad factors combined — rough passage | Difficult |
+
+The WRPI label and the comfort score are **complementary, not equivalent.** WRPI's
+`sailingConditionLevel()` uses apparent wind angle and takes the worst single waypoint as the
+route label — one rough stretch makes the whole route "Bumpy." The comfort score averages over
+the full passage and uses true wind angle. A route that is mostly easy with one hard overnight
+beat may score 0.28 (Bumpy boundary) while WRPI calls it "Bumpy" due to that one stretch.
+
+**Workflow:** use the comfort score to narrow the candidate list, then Inspect the short-listed
+departures in WRPI to get the per-waypoint Good/Bumpy/Difficult assessment before committing.
+
+### Known limitation (KL-1)
+
+The comfort score does not model bow-slamming on a close-hauled beat into short-period chop.
+The wave period penalty addresses this partially, but the model lacks the apparent-wind-angle
+term that WRPI uses to amplify discomfort at ~35° off the bow. As wave-augmented passage data
+accumulates, the comfort profile will learn Shanti's actual motion response and the gap will
+narrow. Until then, WRPI's route-level label is the more reliable indicator for passages with
+significant upwind miles.
+
+---
+
 ## Results table columns
 
 | Column | Content |
