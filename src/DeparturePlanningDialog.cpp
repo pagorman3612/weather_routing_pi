@@ -6,6 +6,7 @@
 #include <wx/wx.h>
 #include <wx/fileconf.h>
 #include <wx/filedlg.h>
+#include <fstream>
 #include <wx/datectrl.h>
 #include <wx/timectrl.h>
 #include <wx/dateevt.h>
@@ -228,7 +229,7 @@ void DeparturePlanningDialog::BuildUI() {
         _("Avg TWS (kn)"), _("Max TWS (kn)"), _("Max Swell (m)"),
         _("Comfort"), _("Arrival"), _("Status")
     };
-    static const int colWidths[COL_COUNT] = { 45, 145, 145, 80, 90, 90, 90, 70, 85, 120 };
+    static const int colWidths[COL_COUNT] = { 45, 145, 145, 80, 110, 110, 105, 70, 85, 120 };
     for (int i = 0; i < COL_COUNT; ++i)
         m_lcResults->InsertColumn(i, colHdrs[i], wxLIST_FORMAT_LEFT, colWidths[i]);
     top->Add(m_lcResults, 1, wxEXPAND | wxALL, 4);
@@ -242,24 +243,28 @@ void DeparturePlanningDialog::BuildUI() {
 
     // --- Buttons ---
     wxBoxSizer* btnRow = new wxBoxSizer(wxHORIZONTAL);
-    m_btnRun    = new wxButton(this, wxID_ANY, _("Run"));
-    m_btnApply  = new wxButton(this, wxID_ANY, _("Apply"));
-    m_btnInspect = new wxButton(this, wxID_ANY, _("Inspect"));
+    m_btnRun       = new wxButton(this, wxID_ANY, _("Run"));
+    m_btnApply     = new wxButton(this, wxID_ANY, _("Apply"));
+    m_btnInspect   = new wxButton(this, wxID_ANY, _("Inspect"));
+    m_btnExportCsv = new wxButton(this, wxID_ANY, _("Export CSV..."));
     wxButton* btnClose = new wxButton(this, wxID_ANY, _("Close"));
-    btnRow->Add(m_btnRun,     0, wxALL, 4);
+    btnRow->Add(m_btnRun,       0, wxALL, 4);
     btnRow->AddStretchSpacer();
-    btnRow->Add(m_btnApply,   0, wxALL, 4);
-    btnRow->Add(m_btnInspect, 0, wxALL, 4);
-    btnRow->Add(btnClose,     0, wxALL, 4);
+    btnRow->Add(m_btnApply,     0, wxALL, 4);
+    btnRow->Add(m_btnInspect,   0, wxALL, 4);
+    btnRow->Add(m_btnExportCsv, 0, wxALL, 4);
+    btnRow->Add(btnClose,       0, wxALL, 4);
     top->Add(btnRow, 0, wxEXPAND | wxALL, 4);
 
     m_btnApply->Disable();
     m_btnInspect->Disable();
+    m_btnExportCsv->Disable();
 
-    m_btnRun->Bind(wxEVT_BUTTON,    &DeparturePlanningDialog::OnRun, this);
-    m_btnApply->Bind(wxEVT_BUTTON,  &DeparturePlanningDialog::OnApply, this);
-    m_btnInspect->Bind(wxEVT_BUTTON, &DeparturePlanningDialog::OnInspect, this);
-    btnClose->Bind(wxEVT_BUTTON,    &DeparturePlanningDialog::OnClose, this);
+    m_btnRun->Bind(wxEVT_BUTTON,       &DeparturePlanningDialog::OnRun, this);
+    m_btnApply->Bind(wxEVT_BUTTON,     &DeparturePlanningDialog::OnApply, this);
+    m_btnInspect->Bind(wxEVT_BUTTON,   &DeparturePlanningDialog::OnInspect, this);
+    m_btnExportCsv->Bind(wxEVT_BUTTON, &DeparturePlanningDialog::OnExportCsv, this);
+    btnClose->Bind(wxEVT_BUTTON,       &DeparturePlanningDialog::OnClose, this);
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveConfig(); UnpinInspect(); Hide(); });
 
     UpdateWeightControls();
@@ -519,6 +524,96 @@ void DeparturePlanningDialog::OnInspect(wxCommandEvent&) {
 }
 
 // ---------------------------------------------------------------------------
+// Export CSV
+// ---------------------------------------------------------------------------
+
+void DeparturePlanningDialog::OnExportCsv(wxCommandEvent&) {
+    const std::vector<SweepCandidate>& cands = m_controller.GetCandidates();
+    if (cands.empty()) return;
+
+    wxFileDialog dlg(this, _("Export results as CSV"), wxEmptyString,
+                     "departure_sweep.csv",
+                     "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                     wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dlg.ShowModal() != wxID_OK) return;
+
+    std::ofstream f(dlg.GetPath().ToStdString());
+    if (!f.is_open()) {
+        wxMessageBox(_("Could not open file for writing."), _("Export CSV"), wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    // Header row — matches UI column labels.
+    f << "Rank,Departure (UTC),ETA (UTC),Duration,Duration (h),Avg TWS (kn),"
+         "Max TWS (kn),Max Swell (m),Comfort,Arrival OK,Arrival Miss,Status\n";
+
+    for (const SweepCandidate& c : cands) {
+        // Rank
+        if (c.rank > 0)
+            f << c.rank;
+        f << ',';
+
+        // Departure UTC ISO 8601
+        f << c.departure_utc.Format("%Y-%m-%d %H:%M").ToStdString() << ',';
+
+        if (c.succeeded) {
+            // ETA UTC ISO 8601
+            f << c.eta_utc.Format("%Y-%m-%d %H:%M").ToStdString() << ',';
+
+            // Duration as Xd HH:MM
+            f << FmtDuration(c.duration).ToStdString() << ',';
+
+            // Duration as decimal hours
+            long secs = c.duration.GetSeconds().ToLong();
+            if (secs >= 0)
+                f << wxString::Format("%.4f", secs / 3600.0).ToStdString();
+            f << ',';
+
+            // Avg TWS
+            if (!std::isnan(c.avg_tws_kn))
+                f << wxString::Format("%.1f", c.avg_tws_kn).ToStdString();
+            f << ',';
+
+            // Max TWS
+            if (!std::isnan(c.max_tws_kn))
+                f << wxString::Format("%.1f", c.max_tws_kn).ToStdString();
+            f << ',';
+
+            // Max Swell
+            if (!std::isnan(c.max_swell_m))
+                f << wxString::Format("%.1f", c.max_swell_m).ToStdString();
+            f << ',';
+
+            // Comfort
+            if (!std::isnan(c.comfort_penalty))
+                f << wxString::Format("%.2f", c.comfort_penalty).ToStdString();
+            f << ',';
+
+            // Arrival OK
+            f << (c.arrival_ok ? "true" : "false") << ',';
+
+            // Arrival miss reason (quote if non-empty)
+            if (!c.arrival_miss.IsEmpty())
+                f << '"' << c.arrival_miss.ToStdString() << '"';
+            f << ',';
+
+            // Status
+            f << "OK\n";
+        } else {
+            // ETA, Duration, Duration(h), Avg TWS, Max TWS, Max Swell, Comfort, Arrival OK, Arrival Miss
+            f << ",,,,,,,,,";
+            // Status — quote if contains comma
+            std::string reason = c.failure_reason.IsEmpty() ? "Failed" : c.failure_reason.ToStdString();
+            f << '"' << reason << '"' << '\n';
+        }
+    }
+
+    f.close();
+    SetStatusText(wxString::Format(_("Exported %zu rows to %s"),
+                                   cands.size(), dlg.GetFilename()));
+}
+
+// ---------------------------------------------------------------------------
 // Close
 // ---------------------------------------------------------------------------
 
@@ -641,6 +736,7 @@ void DeparturePlanningDialog::SetSweepRunning(bool running) {
     m_gauge->Show(running);
     m_btnApply->Enable(!running);
     m_btnInspect->Enable(!running);
+    if (running) m_btnExportCsv->Disable();
     Layout();
 }
 
@@ -740,10 +836,11 @@ void DeparturePlanningDialog::UpdateResultsList() {
 
     m_lcResults->Thaw();
 
-    // Enable Apply / Inspect based on selection.
+    // Enable Apply / Inspect / Export based on selection.
     bool running = m_controller.IsRunning();
     m_btnApply->Enable(!running);
     m_btnInspect->Enable(!running);
+    m_btnExportCsv->Enable(!running && !cands.empty());
 }
 
 // ---------------------------------------------------------------------------

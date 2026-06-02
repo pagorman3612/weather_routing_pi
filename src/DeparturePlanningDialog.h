@@ -37,6 +37,7 @@ private:
     void OnStop(wxCommandEvent&);
     void OnApply(wxCommandEvent&);
     void OnInspect(wxCommandEvent&);
+    void OnExportCsv(wxCommandEvent&);
     void OnClose(wxCommandEvent&);
     void OnBrowseProfile(wxCommandEvent&);
     void OnPollTimer(wxTimerEvent&);
@@ -117,6 +118,7 @@ private:
     wxButton*        m_btnRun;
     wxButton*        m_btnApply;
     wxButton*        m_btnInspect;
+    wxButton*        m_btnExportCsv;
 
     static const int kPollMs = 250;
 };
