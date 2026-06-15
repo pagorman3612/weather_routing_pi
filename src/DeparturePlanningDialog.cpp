@@ -137,6 +137,7 @@ void DeparturePlanningDialog::BuildUI() {
     m_chRankMode->Append(_("Balanced"));
     m_chRankMode->Append(_("Fastest"));
     m_chRankMode->Append(_("Smoothest"));
+    m_chRankMode->Append(_("Earliest Arrival"));
     m_chRankMode->SetSelection(0);
     sbRank->Add(m_chRankMode, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     m_pnlWeight = new wxPanel(this, wxID_ANY);
@@ -895,6 +896,7 @@ RankParams DeparturePlanningDialog::BuildRankParams() const {
     int sel = m_chRankMode->GetSelection();
     if (sel == 1) rp.mode = SortMode::FASTEST;
     else if (sel == 2) rp.mode = SortMode::SMOOTHEST;
+    else if (sel == 3) rp.mode = SortMode::EARLIEST_ARRIVAL;
     else rp.mode = SortMode::BALANCED;
     rp.balanced_weight = m_slWeight->GetValue() / 10.0;
     return rp;

@@ -263,6 +263,10 @@ void DepartureSweepController::RankCandidates(
             case SortMode::SMOOTHEST: return comfort;
             case SortMode::BALANCED:
                 return duration_h * (1.0 + params.balanced_weight * comfort);
+            case SortMode::EARLIEST_ARRIVAL:
+                return c.eta_utc.IsValid()
+                    ? static_cast<double>(c.eta_utc.GetTicks())
+                    : std::numeric_limits<double>::max();
         }
         return duration_h;
     };

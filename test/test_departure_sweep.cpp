@@ -157,6 +157,37 @@ TEST(DepartureSweepRanking, BalancedWeight) {
 }
 
 // ============================================================
+// test_departure_sweep_ranking_earliest_arrival
+// ============================================================
+TEST(DepartureSweepRanking, EarliestArrival) {
+    // Three succeeded candidates with different eta_utc; failed candidate.
+    // Expected rank order: C (earliest ETA) < A < B (latest ETA).
+    auto a = MakeCandidate(true, true, 15.0, 10.0);
+    auto b = MakeCandidate(true, true, 12.0, 8.0);
+    auto c = MakeCandidate(true, true, 10.0, 12.0);
+    auto f = MakeCandidate(false, false, 0.0, 0.0);
+    a.eta_utc = UTC(2026, 6, 16, 12, 0);  // 12:00 — middle
+    b.eta_utc = UTC(2026, 6, 16, 18, 0);  // 18:00 — latest
+    c.eta_utc = UTC(2026, 6, 16,  6, 0);  // 06:00 — earliest
+    // f.eta_utc left invalid — tests the fallback guard
+
+    std::vector<SweepCandidate> cands = {a, b, c, f};
+    RankParams rp;
+    rp.mode = SortMode::EARLIEST_ARRIVAL;
+    DepartureSweepController::RankCandidates(cands, rp);
+
+    // Tier 1 (succeeded + arrival_ok) sorted by earliest ETA: C, A, B.
+    ASSERT_EQ(cands[0].rank, 1);
+    EXPECT_TRUE(cands[0].eta_utc == UTC(2026, 6, 16,  6, 0));
+    ASSERT_EQ(cands[1].rank, 2);
+    EXPECT_TRUE(cands[1].eta_utc == UTC(2026, 6, 16, 12, 0));
+    ASSERT_EQ(cands[2].rank, 3);
+    EXPECT_TRUE(cands[2].eta_utc == UTC(2026, 6, 16, 18, 0));
+    // Failed candidate gets rank 0.
+    ASSERT_EQ(cands[3].rank, 0);
+}
+
+// ============================================================
 // test_sweep_candidate_window_clamp
 // ============================================================
 TEST(DepartureSweep, CandidateWindowClamp) {

@@ -55,7 +55,7 @@ struct ArrivalWindowParams {
     double            end_lon                 = std::numeric_limits<double>::quiet_NaN();
 };
 
-enum class SortMode { FASTEST, SMOOTHEST, BALANCED };
+enum class SortMode { FASTEST, SMOOTHEST, BALANCED, EARLIEST_ARRIVAL };
 
 struct RankParams {
     SortMode mode            = SortMode::BALANCED;
